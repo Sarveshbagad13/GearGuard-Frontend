@@ -14,9 +14,9 @@ const Navbar = () => {
         </div>
         
         <div className="hidden md:flex items-center space-x-8 text-sm">
-          <a href="#protocol" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Equipment</a>
-          <a href="#modules" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Team</a>
-          <a href="#pricing" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Request</a>
+          <a href="/equipment" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Equipment</a>
+          <a href="/team" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Team</a>
+          <a href="/request" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Request</a>
         </div>
 
         <div className="flex items-center space-x-4">

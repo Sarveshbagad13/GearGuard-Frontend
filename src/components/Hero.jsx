@@ -136,7 +136,7 @@ const Hero = () => {
         <div className="relative animate-fadeInRight">
           <div className="absolute inset-0 bg-linear-to-br from-cyan-500/20 to-blue-500/20 blur-3xl" />
           
-          <div className="relative bg-linear-to-br from-primary-darker to-primary-darkest rounded-lg border border-cyan-500/20 p-6 shadow-2xl flex flex-col items-center space-y-8">
+          <div className="relative bg-linear-to-br from-primary-darker to-primary-darkest rounded-lg border h-[550px] border-cyan-500/20 p-6 shadow-2xl flex flex-col items-center space-y-8">
             
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
