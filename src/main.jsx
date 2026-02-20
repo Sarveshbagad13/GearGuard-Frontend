@@ -6,7 +6,7 @@ import {createBrowserRouter, RouterProvider} from 'react-router-dom'
 import EquipmentPage from "./Pages/EquipmentPage.jsx"
 import RequestPage from "./Pages/RequestPage.jsx"
 import TeamPage from "./Pages/TeamPage.jsx"
-import NexusAuth from "./Pages/Login_SignupPage.jsx"
+import GGAuth from "./Pages/Login_SignupPage.jsx"
 
 const router = createBrowserRouter([
   {
@@ -27,7 +27,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/login",
-    element: <NexusAuth />
+    element: <GGAuth />
   }
 ])
 

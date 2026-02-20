@@ -671,7 +671,7 @@ function RingAnimation() {
 }
 
 // ── Main Component ──
-export default function NexusAuth() {
+export default function GGAuth() {
   const [isSignup, setIsSignup] = useState(false);
 
   const panelContent = isSignup
