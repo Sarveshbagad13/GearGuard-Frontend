@@ -19,14 +19,12 @@ const Navbar = () => {
           <a href="/equipment" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Equipment</a>
           <a href="/team" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Team</a>
           <a href="/request" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Request</a>
+          <a href="/calendar" className="text-gray-400 hover:text-cyan-400 transition-colors uppercase tracking-wider">Calendar</a>
         </div>
 
         <div className="flex items-center space-x-4">
-          <button onClick={() => navigate("/login")} className="text-sm text-gray-400 hover:text-white transition-colors uppercase tracking-wider">
-            Login
-          </button>
           <button className="px-6 py-2 bg-cyan-500 text-primary-dark font-semibold text-sm uppercase tracking-wider hover:bg-cyan-400 transition-colors">
-            Sign Up
+            Login
           </button>
         </div>
       </div>

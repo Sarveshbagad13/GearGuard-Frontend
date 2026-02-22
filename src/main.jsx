@@ -7,6 +7,7 @@ import EquipmentPage from "./Pages/EquipmentPage.jsx"
 import RequestPage from "./Pages/RequestPage.jsx"
 import TeamPage from "./Pages/TeamPage.jsx"
 import GGAuth from "./Pages/Login_SignupPage.jsx"
+import CalendarPage from "./Pages/CalendarPage.jsx"
 
 const router = createBrowserRouter([
   {
@@ -28,6 +29,10 @@ const router = createBrowserRouter([
   {
     path: "/login",
     element: <GGAuth />
+  },
+  {
+    path: "/calendar",
+    element: <CalendarPage />
   }
 ])
 
