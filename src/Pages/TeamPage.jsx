@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, Plus, Download, MoreVertical, User, Users, Award, Clock, CheckCircle, Wrench, AlertCircle } from 'lucide-react';
+import { userAPI, teamAPI } from '../services/api';
 
 const TeamsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -8,9 +9,54 @@ const TeamsPage = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'table'
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Sample team members data
-  const [teamMembers, setTeamMembers] = useState([
+  // Fetch team members from API
+  useEffect(() => {
+    fetchTeamMembers();
+  }, []);
+
+  const fetchTeamMembers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await userAPI.getAll();
+      
+      // Map backend user data to frontend team member format
+      const mappedData = response.data.map(item => ({
+        id: `TM-${String(item.id).padStart(3, '0')}`,
+        name: item.name,
+        role: item.role,
+        department: item.team?.specialization || 'General',
+        email: item.email,
+        phone: 'N/A', // Not in backend
+        status: item.isActive ? 'available' : 'inactive',
+        specialization: [], // Not in backend, could be derived from team
+        certifications: [], // Not in backend
+        assignedRequests: 0, // Would need to query
+        completedRequests: 0, // Would need to query
+        avgResponseTime: 'N/A',
+        rating: 0,
+        joinDate: new Date(item.createdAt).toISOString().split('T')[0],
+        availability: item.isActive ? 'Full-time' : 'Inactive',
+        rawData: item
+      }));
+      
+      setTeamMembers(mappedData);
+    } catch (err) {
+      console.error('Failed to fetch team members:', err);
+      setError('Failed to load team members. Using sample data.');
+      loadSampleData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fallback sample data
+  const loadSampleData = () => {
+    const sampleData = [
     {
       id: 'TM-001',
       name: 'Mike Johnson',
@@ -113,7 +159,9 @@ const TeamsPage = () => {
       joinDate: '2023-06-01',
       availability: 'Full-time',
     },
-  ]);
+    ];
+    setTeamMembers(sampleData);
+  };
 
   const getStatusBadge = (status) => {
     const statusConfig = {
@@ -211,6 +259,18 @@ const TeamsPage = () => {
     alert(`Successfully exported ${teamMembers.length} team members!`);
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-cyan-400 text-lg">Loading team members...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6">
       {/* Header */}
@@ -240,6 +300,14 @@ const TeamsPage = () => {
             </button>
           </div>
         </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-400" />
+            <p className="text-yellow-200">{error}</p>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

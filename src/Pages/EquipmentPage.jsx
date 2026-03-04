@@ -1,26 +1,88 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertCircle, CheckCircle, Clock, Wrench } from 'lucide-react';
+import { equipmentAPI } from '../services/api';
 
 const EquipmentPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedEquipment, setSelectedEquipment] = useState(null);
+  const [equipmentData, setEquipmentData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Sample equipment data
-  const equipmentData = [
-    {
-      id: 'EQ-001',
-      name: 'CNC Machine A1',
-      category: 'Manufacturing',
-      location: 'Floor 2 - Bay 3',
-      status: 'operational',
-      lastMaintenance: '2024-01-15',
-      nextMaintenance: '2024-02-15',
-      condition: 95,
-      serialNumber: 'CNC-2023-A1-4567',
-      purchaseDate: '2023-05-10',
-      warranty: 'Active until 2025-05-10',
-    },
+  // Fetch equipment data from API
+  useEffect(() => {
+    fetchEquipment();
+  }, []);
+
+  const fetchEquipment = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await equipmentAPI.getAll();
+      
+      // Map backend data to frontend format
+      const mappedData = response.data.map(item => ({
+        id: `EQ-${String(item.id).padStart(3, '0')}`,
+        name: item.name,
+        category: item.category,
+        location: item.location,
+        status: mapBackendStatus(item.status),
+        lastMaintenance: item.updatedAt ? new Date(item.updatedAt).toISOString().split('T')[0] : 'N/A',
+        nextMaintenance: 'TBD', // You can calculate this based on your logic
+        condition: calculateCondition(item), // Calculate based on your logic
+        serialNumber: item.serialNumber,
+        purchaseDate: new Date(item.purchaseDate).toISOString().split('T')[0],
+        warranty: item.warrantyExpiry ? `Active until ${new Date(item.warrantyExpiry).toISOString().split('T')[0]}` : 'Expired',
+        rawData: item // Keep original data for reference
+      }));
+      
+      setEquipmentData(mappedData);
+    } catch (err) {
+      console.error('Failed to fetch equipment:', err);
+      setError('Failed to load equipment data. Using sample data.');
+      // Fallback to sample data
+      loadSampleData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to map backend status to frontend status
+  const mapBackendStatus = (status) => {
+    const statusMap = {
+      'Active': 'operational',
+      'Under Maintenance': 'maintenance',
+      'Scrapped': 'down',
+      'Retired': 'down'
+    };
+    return statusMap[status] || 'operational';
+  };
+
+  // Helper function to calculate condition (you can customize this)
+  const calculateCondition = (item) => {
+    if (item.status === 'Active') return Math.floor(Math.random() * 20) + 80; // 80-99
+    if (item.status === 'Under Maintenance') return Math.floor(Math.random() * 20) + 60; // 60-79
+    if (item.status === 'Scrapped') return Math.floor(Math.random() * 30) + 20; // 20-49
+    return 50;
+  };
+
+  // Fallback sample data
+  const loadSampleData = () => {
+    const sampleData = [
+      {
+        id: 'EQ-001',
+        name: 'CNC Machine A1',
+        category: 'Manufacturing',
+        location: 'Floor 2 - Bay 3',
+        status: 'operational',
+        lastMaintenance: '2024-01-15',
+        nextMaintenance: '2024-02-15',
+        condition: 95,
+        serialNumber: 'CNC-2023-A1-4567',
+        purchaseDate: '2023-05-10',
+        warranty: 'Active until 2025-05-10',
+      },
     {
       id: 'EQ-002',
       name: 'Forklift FL-205',
@@ -73,20 +135,22 @@ const EquipmentPage = () => {
       purchaseDate: '2022-06-12',
       warranty: 'Active until 2025-06-12',
     },
-    {
-      id: 'EQ-006',
-      name: 'Conveyor Belt CB-7',
-      category: 'Manufacturing',
-      location: 'Floor 1 - Assembly',
-      status: 'down',
-      lastMaintenance: '2024-01-30',
-      nextMaintenance: '2024-02-02',
-      condition: 45,
-      serialNumber: 'CB-2020-07-1234',
-      purchaseDate: '2020-09-08',
-      warranty: 'Expired',
-    },
-  ];
+      {
+        id: 'EQ-006',
+        name: 'Conveyor Belt CB-7',
+        category: 'Manufacturing',
+        location: 'Floor 1 - Assembly',
+        status: 'down',
+        lastMaintenance: '2024-01-30',
+        nextMaintenance: '2024-02-02',
+        condition: 45,
+        serialNumber: 'CB-2020-07-1234',
+        purchaseDate: '2020-09-08',
+        warranty: 'Expired',
+      },
+    ];
+    setEquipmentData(sampleData);
+  };
 
   const getStatusBadge = (status) => {
     const statusConfig = {
@@ -129,6 +193,18 @@ const EquipmentPage = () => {
     { label: 'Down', value: equipmentData.filter(e => e.status === 'down').length, color: 'text-red-400' },
   ];
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-cyan-400 text-lg">Loading equipment data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6">
       {/* Header */}
@@ -156,6 +232,14 @@ const EquipmentPage = () => {
             </button>
           </div>
         </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-400" />
+            <p className="text-yellow-200">{error}</p>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

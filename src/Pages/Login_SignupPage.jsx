@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { authAPI } from "../services/api";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700;900&display=swap');
@@ -582,12 +584,19 @@ function StatusBadge({ label }) {
   );
 }
 
-function InputField({ label, type = "text", placeholder, icon }) {
+function InputField({ label, type = "text", placeholder, icon, value, onChange, name }) {
   return (
     <div className="nx-field">
       <div className="nx-field-label">{label}</div>
       <div className="nx-input-wrap">
-        <input className="nx-input" type={type} placeholder={placeholder} />
+        <input 
+          className="nx-input" 
+          type={type} 
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          name={name}
+        />
         <span className="nx-input-icon">{icon}</span>
       </div>
     </div>
@@ -673,6 +682,105 @@ function RingAnimation() {
 // ── Main Component ──
 export default function GGAuth() {
   const [isSignup, setIsSignup] = useState(false);
+  const navigate = useNavigate();
+  
+  // Login form state
+  const [loginData, setLoginData] = useState({
+    email: '',
+    password: '',
+    remember: false
+  });
+  
+  // Signup form state
+  const [signupData, setSignupData] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+
+  // Handle login input changes
+  const handleLoginChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setLoginData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  // Handle signup input changes
+  const handleSignupChange = (e) => {
+    const { name, value } = e.target;
+    setSignupData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Handle login submission
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    
+    try {
+      console.log('Attempting login...', loginData.email);
+      const response = await authAPI.login(loginData.email, loginData.password);
+      
+      if (response.success) {
+        console.log('Login successful:', response.data);
+        
+        // Store user data in localStorage
+        localStorage.setItem('user', JSON.stringify(response.data));
+        
+        // Redirect to dashboard
+        navigate('/dashboard');
+      } else {
+        alert('Login failed: ' + (response.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Login failed: ' + (error.message || 'Unable to connect to server'));
+    }
+  };
+
+  // Handle signup submission
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    
+    // Validation
+    if (signupData.password !== signupData.confirmPassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+    
+    if (signupData.password.length < 8) {
+      alert('Password must be at least 8 characters!');
+      return;
+    }
+    
+    try {
+      console.log('Attempting signup...', signupData.email);
+      const response = await authAPI.register({
+        name: signupData.fullName,
+        email: signupData.email,
+        password: signupData.password
+      });
+      
+      if (response.success) {
+        console.log('Signup successful:', response.data);
+        
+        // Store user data in localStorage
+        localStorage.setItem('user', JSON.stringify(response.data));
+        
+        alert(`Welcome, ${response.data.name}!\n\nAccount created successfully!`);
+        // Redirect to dashboard
+        navigate('/dashboard')
+        alert('Registration failed: ' + (response.message || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Signup error:', error);
+      alert('Registration failed: ' + (error.message || 'Unable to connect to server'));
+    }
+  };
 
   const panelContent = isSignup
     ? {
@@ -700,16 +808,38 @@ export default function GGAuth() {
               <StatusBadge label="SYSTEM ONLINE" />
               <h2 className="nx-title" data-text="ACCESS LOGIN">ACCESS LOGIN</h2>
               <p className="nx-sub">Enter your credentials to continue</p>
-              <InputField label="Email Address" type="email"    placeholder="user@nexus.sys" icon={<IconMail />} />
-              <InputField label="Password"      type="password" placeholder="••••••••"       icon={<IconLock />} />
+              <InputField 
+                label="Email Address" 
+                type="email" 
+                placeholder="user@nexus.sys" 
+                icon={<IconMail />}
+                name="email"
+                value={loginData.email}
+                onChange={handleLoginChange}
+              />
+              <InputField 
+                label="Password" 
+                type="password" 
+                placeholder="••••••••" 
+                icon={<IconLock />}
+                name="password"
+                value={loginData.password}
+                onChange={handleLoginChange}
+              />
               <div className="nx-row-opts">
                 <label className="nx-remember">
-                  <input type="checkbox" className="nx-checkbox" />
+                  <input 
+                    type="checkbox" 
+                    className="nx-checkbox"
+                    name="remember"
+                    checked={loginData.remember}
+                    onChange={handleLoginChange}
+                  />
                   Remember me
                 </label>
                 <button className="nx-forgot">Forgot password?</button>
               </div>
-              <button className="nx-btn-auth">Authenticate</button>
+              <button className="nx-btn-auth" onClick={handleLogin}>Authenticate</button>
               <div className="nx-or">OR CONTINUE WITH</div>
               <div className="nx-social-row">
                 <button className="nx-btn-social"><IconGithub /> GitHub</button>
@@ -727,11 +857,43 @@ export default function GGAuth() {
               <StatusBadge label="NEW REGISTRATION" />
               <h2 className="nx-title" data-text="CREATE ACCOUNT">CREATE ACCOUNT</h2>
               <p className="nx-sub">Initialize your access credentials</p>
-              <InputField label="Full Name"        type="text"     placeholder="Agent Name"        icon={<IconUser />}   />
-              <InputField label="Email Address"    type="email"    placeholder="user@nexus.sys"     icon={<IconMail />}   />
-              <InputField label="Password"         type="password" placeholder="Min. 8 characters"  icon={<IconLock />}   />
-              <InputField label="Confirm Password" type="password" placeholder="Repeat password"    icon={<IconShield />} />
-              <button className="nx-btn-auth" style={{ marginTop: 10 }}>Initialize Account</button>
+              <InputField 
+                label="Full Name" 
+                type="text" 
+                placeholder="Agent Name" 
+                icon={<IconUser />}
+                name="fullName"
+                value={signupData.fullName}
+                onChange={handleSignupChange}
+              />
+              <InputField 
+                label="Email Address" 
+                type="email" 
+                placeholder="user@nexus.sys" 
+                icon={<IconMail />}
+                name="email"
+                value={signupData.email}
+                onChange={handleSignupChange}
+              />
+              <InputField 
+                label="Password" 
+                type="password" 
+                placeholder="Min. 8 characters" 
+                icon={<IconLock />}
+                name="password"
+                value={signupData.password}
+                onChange={handleSignupChange}
+              />
+              <InputField 
+                label="Confirm Password" 
+                type="password" 
+                placeholder="Repeat password" 
+                icon={<IconShield />}
+                name="confirmPassword"
+                value={signupData.confirmPassword}
+                onChange={handleSignupChange}
+              />
+              <button className="nx-btn-auth" style={{ marginTop: 10 }} onClick={handleSignup}>Initialize Account</button>
             </div>
           </div>
 
