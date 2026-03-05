@@ -33,48 +33,61 @@ const Dashboard = () => {
     navigate('/');
   };
 
-  const modules = [
-    {
-      title: 'Equipment',
-      description: 'Manage and track all equipment',
-      icon: Wrench,
-      path: '/equipment',
-      color: 'from-cyan-500 to-cyan-600',
-      stats: 'Track assets'
-    },
-    {
-      title: 'Requests',
-      description: 'View and manage maintenance requests',
-      icon: FileText,
-      path: '/requests',
-      color: 'from-blue-500 to-blue-600',
-      stats: 'Monitor requests'
-    },
-    {
-      title: 'Kanban Board',
-      description: 'Visual workflow management',
-      icon: LayoutGrid,
-      path: '/kanban',
-      color: 'from-teal-500 to-teal-600',
-      stats: 'Drag & Drop'
-    },
-    {
-      title: 'Calendar',
-      description: 'Schedule preventive maintenance',
-      icon: Calendar,
-      path: '/calendar',
-      color: 'from-cyan-400 to-cyan-500',
-      stats: 'Plan ahead'
-    },
-    {
-      title: 'Teams',
-      description: 'Manage maintenance teams',
-      icon: Users,
-      path: '/teams',
-      color: 'from-blue-400 to-blue-500',
-      stats: 'Coordinate staff'
-    }
-  ];
+  // Role-based module access
+  const getModulesForRole = (userRole) => {
+    const allModules = [
+      {
+        title: 'Equipment',
+        description: 'Manage and track all equipment',
+        icon: Wrench,
+        path: '/equipment',
+        color: 'from-cyan-500 to-cyan-600',
+        stats: 'Track assets',
+        roles: ['Admin', 'Manager', 'Technician']
+      },
+      {
+        title: 'Requests',
+        description: 'View and manage maintenance requests',
+        icon: FileText,
+        path: '/requests',
+        color: 'from-blue-500 to-blue-600',
+        stats: 'Monitor requests',
+        roles: ['Admin', 'Manager', 'Technician', 'User']
+      },
+      {
+        title: 'Kanban Board',
+        description: 'Visual workflow management',
+        icon: LayoutGrid,
+        path: '/kanban',
+        color: 'from-teal-500 to-teal-600',
+        stats: 'Drag & Drop',
+        roles: ['Admin', 'Manager', 'Technician']
+      },
+      {
+        title: 'Calendar',
+        description: 'Schedule preventive maintenance',
+        icon: Calendar,
+        path: '/calendar',
+        color: 'from-cyan-400 to-cyan-500',
+        stats: 'Plan ahead',
+        roles: ['Admin', 'Manager', 'Technician']
+      },
+      {
+        title: 'Teams',
+        description: 'Manage maintenance teams',
+        icon: Users,
+        path: '/teams',
+        color: 'from-blue-400 to-blue-500',
+        stats: 'Coordinate staff',
+        roles: ['Admin', 'Manager']
+      }
+    ];
+
+    // Filter modules based on user role
+    return allModules.filter(module => module.roles.includes(userRole));
+  };
+
+  const modules = user ? getModulesForRole(user.role) : [];
 
   const quickStats = [
     { label: 'Active Equipment', value: '47', icon: Wrench, color: 'text-cyan-400' },
@@ -157,7 +170,10 @@ const Dashboard = () => {
             Welcome back, {user.name}! 👋
           </h2>
           <p className="text-gray-400">
-            Here's what's happening with your maintenance operations today.
+            {user.role === 'Admin' && 'You have full system access. Manage all equipment, teams, and maintenance operations.'}
+            {user.role === 'Manager' && 'Manage your team assignments, review requests, and track maintenance progress.'}
+            {user.role === 'Technician' && 'View your assigned tasks, update request status, and manage scheduled maintenance.'}
+            {user.role === 'User' && 'Create maintenance requests for equipment issues and track their progress.'}
           </p>
         </div>
 
