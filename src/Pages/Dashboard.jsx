@@ -33,8 +33,22 @@ const Dashboard = () => {
     navigate('/');
   };
 
+  const normalizeRole = (role) => {
+    if (!role || typeof role !== 'string') return 'User';
+    const normalized = role.trim().toLowerCase();
+    const roleMap = {
+      admin: 'Admin',
+      manager: 'Manager',
+      technician: 'Technician',
+      user: 'User'
+    };
+    return roleMap[normalized] || 'User';
+  };
+
   // Role-based module access
   const getModulesForRole = (userRole) => {
+    const normalizedRole = normalizeRole(userRole);
+    void normalizedRole;
     const allModules = [
       {
         title: 'Equipment',
@@ -83,11 +97,12 @@ const Dashboard = () => {
       }
     ];
 
-    // Filter modules based on user role
-    return allModules.filter(module => module.roles.includes(userRole));
+    // Keep all modules visible in dashboard quick access for every authenticated user.
+    return allModules;
   };
 
   const modules = user ? getModulesForRole(user.role) : [];
+  const userRole = normalizeRole(user?.role);
 
   const quickStats = [
     { label: 'Active Equipment', value: '47', icon: Wrench, color: 'text-cyan-400' },
@@ -143,7 +158,7 @@ const Dashboard = () => {
               <div className="flex items-center space-x-3 pl-4 border-l border-cyan-500/20">
                 <div className="text-right">
                   <p className="text-sm font-medium text-gray-100">{user.name}</p>
-                  <p className="text-xs text-cyan-400">{user.role || 'User'}</p>
+                  <p className="text-xs text-cyan-400">{userRole}</p>
                 </div>
                 <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg shadow-cyan-500/30">
                   {user.name.charAt(0).toUpperCase()}
@@ -170,10 +185,10 @@ const Dashboard = () => {
             Welcome back, {user.name}! 👋
           </h2>
           <p className="text-gray-400">
-            {user.role === 'Admin' && 'You have full system access. Manage all equipment, teams, and maintenance operations.'}
-            {user.role === 'Manager' && 'Manage your team assignments, review requests, and track maintenance progress.'}
-            {user.role === 'Technician' && 'View your assigned tasks, update request status, and manage scheduled maintenance.'}
-            {user.role === 'User' && 'Create maintenance requests for equipment issues and track their progress.'}
+            {userRole === 'Admin' && 'You have full system access. Manage all equipment, teams, and maintenance operations.'}
+            {userRole === 'Manager' && 'Manage your team assignments, review requests, and track maintenance progress.'}
+            {userRole === 'Technician' && 'View your assigned tasks, update request status, and manage scheduled maintenance.'}
+            {userRole === 'User' && 'Create maintenance requests for equipment issues and track their progress.'}
           </p>
         </div>
 

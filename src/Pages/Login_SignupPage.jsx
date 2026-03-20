@@ -773,7 +773,8 @@ export default function GGAuth() {
         
         alert(`Welcome, ${response.data.name}!\n\nAccount created successfully!`);
         // Redirect to dashboard
-        navigate('/dashboard')
+        navigate('/dashboard');
+      } else {
         alert('Registration failed: ' + (response.message || 'Unknown error'));
       }
     } catch (error) {

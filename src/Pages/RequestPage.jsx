@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertTriangle, CheckCircle2, Clock, User, Wrench, XCircle, AlertCircle } from 'lucide-react';
-import { maintenanceRequestAPI } from '../services/api';
+import { maintenanceRequestAPI, equipmentAPI } from '../services/api';
 
 const RequestsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,12 +9,23 @@ const RequestsPage = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [requestsData, setRequestsData] = useState([]);
+  const [equipmentOptions, setEquipmentOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [newRequestForm, setNewRequestForm] = useState({
+    title: '',
+    equipmentId: '',
+    priority: 'Medium',
+    category: 'Repair',
+    dueDate: '',
+    description: ''
+  });
 
   // Fetch maintenance requests from API
   useEffect(() => {
     fetchRequests();
+    fetchEquipmentOptions();
   }, []);
 
   const fetchRequests = async () => {
@@ -50,6 +61,85 @@ const RequestsPage = () => {
       loadSampleData();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEquipmentOptions = async () => {
+    try {
+      const response = await equipmentAPI.getAll();
+      const options = Array.isArray(response?.data)
+        ? response.data.map(item => ({
+            id: item.id,
+            name: item.name,
+            serialNumber: item.serialNumber
+          }))
+        : [];
+      setEquipmentOptions(options);
+    } catch (err) {
+      console.error('Failed to fetch equipment options:', err);
+      // Keep form usable with no options instead of breaking the page.
+      setEquipmentOptions([]);
+    }
+  };
+
+  const mapCategoryToRequestType = (category) => {
+    if (category === 'Preventive Maintenance') return 'Preventive';
+    return 'Corrective';
+  };
+
+  const handleCreateInputChange = (field, value) => {
+    setNewRequestForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const resetCreateForm = () => {
+    setNewRequestForm({
+      title: '',
+      equipmentId: '',
+      priority: 'Medium',
+      category: 'Repair',
+      dueDate: '',
+      description: ''
+    });
+  };
+
+  const handleCreateRequest = async (e) => {
+    e.preventDefault();
+
+    if (!newRequestForm.title.trim()) {
+      alert('Please enter a title for the request.');
+      return;
+    }
+
+    if (!newRequestForm.equipmentId) {
+      alert('Please select equipment.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const payload = {
+        subject: newRequestForm.title.trim(),
+        description: newRequestForm.description.trim(),
+        equipment: Number(newRequestForm.equipmentId),
+        requestType: mapCategoryToRequestType(newRequestForm.category),
+        priority: newRequestForm.priority,
+        scheduledDate: newRequestForm.dueDate || null
+      };
+
+      await maintenanceRequestAPI.create(payload);
+      await fetchRequests();
+
+      setShowCreateModal(false);
+      resetCreateForm();
+    } catch (err) {
+      console.error('Failed to create maintenance request:', err);
+      alert(`Failed to create request: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -580,34 +670,46 @@ const RequestsPage = () => {
               </button>
             </div>
 
-            <form className="space-y-4">
+            <form className="space-y-4" onSubmit={handleCreateRequest}>
               <div>
                 <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Title</label>
                 <input
                   type="text"
                   className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
                   placeholder="Brief description of the issue"
+                  value={newRequestForm.title}
+                  onChange={(e) => handleCreateInputChange('title', e.target.value)}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Equipment</label>
-                  <select className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50">
-                    <option>Select Equipment</option>
-                    <option>CNC Machine A1</option>
-                    <option>Forklift FL-205</option>
-                    <option>Server Rack SR-12</option>
+                  <select
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.equipmentId}
+                    onChange={(e) => handleCreateInputChange('equipmentId', e.target.value)}
+                  >
+                    <option value="">Select Equipment</option>
+                    {equipmentOptions.map((equipment) => (
+                      <option key={equipment.id} value={equipment.id}>
+                        {equipment.name} ({equipment.serialNumber})
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Priority</label>
-                  <select className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                    <option>Critical</option>
+                  <select
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.priority}
+                    onChange={(e) => handleCreateInputChange('priority', e.target.value)}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
                   </select>
                 </div>
               </div>
@@ -615,11 +717,15 @@ const RequestsPage = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Category</label>
-                  <select className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50">
-                    <option>Repair</option>
-                    <option>Preventive Maintenance</option>
-                    <option>Emergency</option>
-                    <option>Inspection</option>
+                  <select
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.category}
+                    onChange={(e) => handleCreateInputChange('category', e.target.value)}
+                  >
+                    <option value="Repair">Repair</option>
+                    <option value="Preventive Maintenance">Preventive Maintenance</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="Inspection">Inspection</option>
                   </select>
                 </div>
 
@@ -628,6 +734,8 @@ const RequestsPage = () => {
                   <input
                     type="date"
                     className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.dueDate}
+                    onChange={(e) => handleCreateInputChange('dueDate', e.target.value)}
                   />
                 </div>
               </div>
@@ -638,15 +746,18 @@ const RequestsPage = () => {
                   rows="4"
                   className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
                   placeholder="Detailed description of the maintenance request..."
+                  value={newRequestForm.description}
+                  onChange={(e) => handleCreateInputChange('description', e.target.value)}
                 />
               </div>
 
               <div className="flex gap-3 pt-4">
                 <button 
                   type="submit"
+                  disabled={isSubmitting}
                   className="flex-1 px-6 py-3 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all"
                 >
-                  Submit Request
+                  {isSubmitting ? 'Submitting...' : 'Submit Request'}
                 </button>
                 <button 
                   type="button"

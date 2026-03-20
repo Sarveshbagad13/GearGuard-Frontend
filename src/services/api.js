@@ -13,7 +13,17 @@ const apiRequest = async (endpoint, options = {}) => {
     });
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+      try {
+        const errorBody = await response.json();
+        const details = errorBody?.error || errorBody?.message;
+        if (details) {
+          errorMessage = `${errorMessage} - ${details}`;
+        }
+      } catch {
+        // Keep default error message if body is not JSON.
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
