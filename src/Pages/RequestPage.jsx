@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertTriangle, CheckCircle2, Clock, User, Wrench, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertTriangle, CheckCircle2, Clock, User, Wrench, XCircle, AlertCircle } from 'lucide-react';
+import { maintenanceRequestAPI, equipmentAPI } from '../services/api';
 
 const RequestsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -7,9 +8,161 @@ const RequestsPage = () => {
   const [filterPriority, setFilterPriority] = useState('all');
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [requestsData, setRequestsData] = useState([]);
+  const [equipmentOptions, setEquipmentOptions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [newRequestForm, setNewRequestForm] = useState({
+    title: '',
+    equipmentId: '',
+    priority: 'Medium',
+    category: 'Repair',
+    dueDate: '',
+    description: ''
+  });
 
-  // Sample requests data
-  const [requestsData, setRequestsData] = useState([
+  // Fetch maintenance requests from API
+  useEffect(() => {
+    fetchRequests();
+    fetchEquipmentOptions();
+  }, []);
+
+  const fetchRequests = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await maintenanceRequestAPI.getAll();
+      
+      // Map backend data to frontend format
+      const mappedData = response.data.map(item => ({
+        id: item.requestNumber || `REQ-${String(item.id).padStart(3, '0')}`,
+        title: item.subject,
+        equipmentId: item.equipmentId ? `EQ-${String(item.equipmentId).padStart(3, '0')}` : 'N/A',
+        equipmentName: item.equipment?.name || 'Unknown Equipment',
+        location: item.equipment?.location || 'N/A',
+        requestedBy: item.createdBy?.name || 'Unknown',
+        assignedTo: item.assignedTo?.name || 'Unassigned',
+        priority: mapBackendPriority(item.priority),
+        status: mapBackendStage(item.stage),
+        category: item.requestType,
+        description: item.description || '',
+        createdDate: new Date(item.requestDate).toISOString().split('T')[0],
+        dueDate: item.scheduledDate ? new Date(item.scheduledDate).toISOString().split('T')[0] : 'TBD',
+        completedDate: item.completedDate ? new Date(item.completedDate).toISOString().split('T')[0] : null,
+        estimatedTime: item.duration ? `${item.duration} hours` : 'N/A',
+        rawData: item // Keep original data
+      }));
+      
+      setRequestsData(mappedData);
+    } catch (err) {
+      console.error('Failed to fetch maintenance requests:', err);
+      setError('Failed to load maintenance requests. Using sample data.');
+      loadSampleData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchEquipmentOptions = async () => {
+    try {
+      const response = await equipmentAPI.getAll();
+      const options = Array.isArray(response?.data)
+        ? response.data.map(item => ({
+            id: item.id,
+            name: item.name,
+            serialNumber: item.serialNumber
+          }))
+        : [];
+      setEquipmentOptions(options);
+    } catch (err) {
+      console.error('Failed to fetch equipment options:', err);
+      // Keep form usable with no options instead of breaking the page.
+      setEquipmentOptions([]);
+    }
+  };
+
+  const mapCategoryToRequestType = (category) => {
+    if (category === 'Preventive Maintenance') return 'Preventive';
+    return 'Corrective';
+  };
+
+  const handleCreateInputChange = (field, value) => {
+    setNewRequestForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const resetCreateForm = () => {
+    setNewRequestForm({
+      title: '',
+      equipmentId: '',
+      priority: 'Medium',
+      category: 'Repair',
+      dueDate: '',
+      description: ''
+    });
+  };
+
+  const handleCreateRequest = async (e) => {
+    e.preventDefault();
+
+    if (!newRequestForm.title.trim()) {
+      alert('Please enter a title for the request.');
+      return;
+    }
+
+    if (!newRequestForm.equipmentId) {
+      alert('Please select equipment.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      const payload = {
+        subject: newRequestForm.title.trim(),
+        description: newRequestForm.description.trim(),
+        equipment: Number(newRequestForm.equipmentId),
+        requestType: mapCategoryToRequestType(newRequestForm.category),
+        priority: newRequestForm.priority,
+        scheduledDate: newRequestForm.dueDate || null
+      };
+
+      await maintenanceRequestAPI.create(payload);
+      await fetchRequests();
+
+      setShowCreateModal(false);
+      resetCreateForm();
+    } catch (err) {
+      console.error('Failed to create maintenance request:', err);
+      alert(`Failed to create request: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Helper function to map backend priority to frontend
+  const mapBackendPriority = (priority) => {
+    if (!priority) return 'medium';
+    return priority.toLowerCase();
+  };
+
+  // Helper function to map backend stage to frontend status
+  const mapBackendStage = (stage) => {
+    const stageMap = {
+      'New': 'pending',
+      'In Progress': 'in-progress',
+      'Repaired': 'completed',
+      'Scrap': 'cancelled'
+    };
+    return stageMap[stage] || 'pending';
+  };
+
+  // Fallback sample data
+  const loadSampleData = () => {
+    const sampleData = [
     {
       id: 'REQ-001',
       title: 'CNC Machine A1 - Strange Noise',
@@ -95,24 +248,26 @@ const RequestsPage = () => {
       completedDate: null,
       estimatedTime: '3 hours',
     },
-    {
-      id: 'REQ-006',
-      title: 'Conveyor Belt CB-7 - Motor Failure',
-      equipmentId: 'EQ-006',
-      equipmentName: 'Conveyor Belt CB-7',
-      location: 'Floor 1 - Assembly',
-      requestedBy: 'Production Manager',
-      assignedTo: 'Emergency Team',
-      priority: 'critical',
-      status: 'in-progress',
-      category: 'Emergency',
-      description: 'Motor completely failed. Production line stopped. Need immediate replacement.',
-      createdDate: '2024-02-12',
-      dueDate: '2024-02-12',
-      completedDate: null,
-      estimatedTime: '6 hours',
-    },
-  ]);
+      {
+        id: 'REQ-006',
+        title: 'Conveyor Belt CB-7 - Motor Failure',
+        equipmentId: 'EQ-006',
+        equipmentName: 'Conveyor Belt CB-7',
+        location: 'Floor 1 - Assembly',
+        requestedBy: 'Production Manager',
+        assignedTo: 'Emergency Team',
+        priority: 'critical',
+        status: 'in-progress',
+        category: 'Emergency',
+        description: 'Motor completely failed. Production line stopped. Need immediate replacement.',
+        createdDate: '2024-02-12',
+        dueDate: '2024-02-12',
+        completedDate: null,
+        estimatedTime: '6 hours',
+      },
+    ];
+    setRequestsData(sampleData);
+  };
 
   const getPriorityBadge = (priority) => {
     const priorityConfig = {
@@ -223,6 +378,18 @@ const RequestsPage = () => {
     alert(`Successfully exported ${requestsData.length} maintenance requests!`);
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-cyan-400 text-lg">Loading maintenance requests...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6">
       {/* Header */}
@@ -252,6 +419,14 @@ const RequestsPage = () => {
             </button>
           </div>
         </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-400" />
+            <p className="text-yellow-200">{error}</p>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -495,34 +670,46 @@ const RequestsPage = () => {
               </button>
             </div>
 
-            <form className="space-y-4">
+            <form className="space-y-4" onSubmit={handleCreateRequest}>
               <div>
                 <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Title</label>
                 <input
                   type="text"
                   className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
                   placeholder="Brief description of the issue"
+                  value={newRequestForm.title}
+                  onChange={(e) => handleCreateInputChange('title', e.target.value)}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Equipment</label>
-                  <select className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50">
-                    <option>Select Equipment</option>
-                    <option>CNC Machine A1</option>
-                    <option>Forklift FL-205</option>
-                    <option>Server Rack SR-12</option>
+                  <select
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.equipmentId}
+                    onChange={(e) => handleCreateInputChange('equipmentId', e.target.value)}
+                  >
+                    <option value="">Select Equipment</option>
+                    {equipmentOptions.map((equipment) => (
+                      <option key={equipment.id} value={equipment.id}>
+                        {equipment.name} ({equipment.serialNumber})
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Priority</label>
-                  <select className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                    <option>Critical</option>
+                  <select
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.priority}
+                    onChange={(e) => handleCreateInputChange('priority', e.target.value)}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
                   </select>
                 </div>
               </div>
@@ -530,11 +717,15 @@ const RequestsPage = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Category</label>
-                  <select className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50">
-                    <option>Repair</option>
-                    <option>Preventive Maintenance</option>
-                    <option>Emergency</option>
-                    <option>Inspection</option>
+                  <select
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.category}
+                    onChange={(e) => handleCreateInputChange('category', e.target.value)}
+                  >
+                    <option value="Repair">Repair</option>
+                    <option value="Preventive Maintenance">Preventive Maintenance</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="Inspection">Inspection</option>
                   </select>
                 </div>
 
@@ -543,6 +734,8 @@ const RequestsPage = () => {
                   <input
                     type="date"
                     className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                    value={newRequestForm.dueDate}
+                    onChange={(e) => handleCreateInputChange('dueDate', e.target.value)}
                   />
                 </div>
               </div>
@@ -553,15 +746,18 @@ const RequestsPage = () => {
                   rows="4"
                   className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
                   placeholder="Detailed description of the maintenance request..."
+                  value={newRequestForm.description}
+                  onChange={(e) => handleCreateInputChange('description', e.target.value)}
                 />
               </div>
 
               <div className="flex gap-3 pt-4">
                 <button 
                   type="submit"
+                  disabled={isSubmitting}
                   className="flex-1 px-6 py-3 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all"
                 >
-                  Submit Request
+                  {isSubmitting ? 'Submitting...' : 'Submit Request'}
                 </button>
                 <button 
                   type="button"

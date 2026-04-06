@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertCircle, CheckCircle, Clock, Wrench, Edit, Trash2, X } from 'lucide-react';
-import { getAllEquipment, createEquipment, updateEquipment, deleteEquipment, exportEquipment } from '../api/equipmentApi';
+import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertCircle, CheckCircle, Clock, Wrench } from 'lucide-react';
+import { equipmentAPI } from '../services/api';
 
 const EquipmentPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -215,31 +215,13 @@ const EquipmentPage = () => {
     { label: 'Scrapped', value: equipmentData.filter(e => e.status === 'Scrapped').length, color: 'text-red-400' },
   ];
 
-  // Loading State
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading equipment data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error State
-  if (error) {
-    return (
-      <div className="min-h-screen bg-[#0a0e1a] text-gray-100 p-6 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <p className="text-red-400 text-lg mb-4">{error}</p>
-          <button 
-            onClick={fetchEquipment}
-            className="px-6 py-2 bg-cyan-500 text-[#0a0e1a] font-bold rounded hover:bg-cyan-400 transition-all"
-          >
-            Retry
-          </button>
+          <div className="inline-block w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-cyan-400 text-lg">Loading equipment data...</p>
         </div>
       </div>
     );
@@ -278,6 +260,14 @@ const EquipmentPage = () => {
             </button>
           </div>
         </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-400" />
+            <p className="text-yellow-200">{error}</p>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

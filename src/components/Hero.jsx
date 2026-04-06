@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
 const Hero = () => {
   const [activeMetric, setActiveMetric] = useState(0);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -106,15 +108,18 @@ const Hero = () => {
             and work orders so nothing breaks without you knowing.
           </p>
 
-          {/*<div className="flex flex-wrap gap-4">
-            <button className="px-8 py-3 bg-cyan-500 text-[#0a0e1a] font-bold uppercase border border-cyan-500/50 tracking-wider hover:bg-cyan-400 transition-all hover:scale-105 shadow-lg shadow-cyan-500/30 flex items-center gap-2">
+          <div className="flex flex-wrap gap-4">
+            <button 
+              onClick={() => navigate('/login')}
+              className="px-8 py-3 bg-cyan-500 text-[#0a0e1a] font-bold uppercase border border-cyan-500/50 tracking-wider hover:bg-cyan-400 transition-all hover:scale-105 shadow-lg shadow-cyan-500/30 flex items-center gap-2"
+            >
               GET STARTED
             </button>
             <button className="px-8 py-3 border border-cyan-500/50 text-cyan-400 font-semibold uppercase tracking-wider hover:bg-cyan-500/10 transition-all flex items-center gap-2">
               <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse" />
               SEE HOW IT WORKS
             </button>
-          </div> */}
+          </div>
 
           {/* Metrics */}
           <div className="flex gap-12 pt-6 border-t border-cyan-900/20">
