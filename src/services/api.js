@@ -215,8 +215,9 @@ export const teamAPI = {
 
   // Remove member from team
   removeMember: async (teamId, userId) => {
-    return apiRequest(`/teams/${teamId}/members/${userId}`, {
+    return apiRequest(`/teams/${teamId}/members`, {
       method: 'DELETE',
+      body: JSON.stringify({ userId }),
     });
   },
 };

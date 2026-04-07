@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertCircle, CheckCircle, Clock, Wrench } from 'lucide-react';
-import { equipmentAPI } from '../services/api';
+import { Search, Plus, Download, AlertCircle, CheckCircle, Wrench, Edit, Trash2, X } from 'lucide-react';
+import { equipmentAPI, teamAPI, userAPI } from '../services/api';
+
+const technicianAssignableRoles = new Set(['Admin', 'Manager', 'Technician']);
 
 const EquipmentPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -12,6 +14,8 @@ const EquipmentPage = () => {
   
   // API States
   const [equipmentData, setEquipmentData] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -37,37 +41,79 @@ const EquipmentPage = () => {
 
   // Fetch equipment on component mount
   useEffect(() => {
-    fetchEquipment();
+    fetchPageData();
   }, []);
 
-  // Fetch all equipment from API
-  const fetchEquipment = async () => {
+  const fetchPageData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getAllEquipment();
-      setEquipmentData(data);
+      const [equipmentResponse, teamsResponse, techniciansResponse] = await Promise.all([
+        equipmentAPI.getAll(),
+        teamAPI.getAll().catch(() => ({ data: [] })),
+        userAPI.getAll({ role: 'Technician' }).catch(() => ({ data: [] }))
+      ]);
+
+      setEquipmentData(Array.isArray(equipmentResponse.data) ? equipmentResponse.data : []);
+      setTeams(Array.isArray(teamsResponse.data) ? teamsResponse.data : []);
+      const fetchedTechnicians = Array.isArray(techniciansResponse.data) ? techniciansResponse.data : [];
+      setTechnicians(fetchedTechnicians.filter((user) => technicianAssignableRoles.has(user.role)));
     } catch (err) {
       setError('Failed to load equipment. Please try again.');
       console.error('Error fetching equipment:', err);
-      
-      // If 401 error, user will be redirected to login by interceptor
-      if (err.response?.status !== 401) {
-        setEquipmentData([]);
-      }
+      setEquipmentData([]);
+      setTeams([]);
+      setTechnicians([]);
     } finally {
       setLoading(false);
     }
   };
 
+  const buildEquipmentPayload = (data) => ({
+    name: data.name.trim(),
+    serialNumber: data.serialNumber.trim(),
+    category: data.category,
+    purchaseDate: data.purchaseDate,
+    warrantyExpiry: data.warrantyExpiry || null,
+    location: data.location.trim(),
+    ownershipType: data.ownershipType,
+    department: data.department.trim() || null,
+    assignedEmployeeName: data.assignedEmployeeName.trim() || null,
+    assignedEmployeeEmail: data.assignedEmployeeEmail.trim() || null,
+    maintenanceTeamId: data.maintenanceTeamId ? Number(data.maintenanceTeamId) : null,
+    defaultTechnicianId: data.defaultTechnicianId ? Number(data.defaultTechnicianId) : null,
+    status: data.status,
+    notes: data.notes.trim() || null,
+    safetyInstructions: data.safetyInstructions.trim() || null
+  });
+
   // Handle Export
-  const handleExport = async () => {
-    try {
-      await exportEquipment();
-    } catch (err) {
-      alert('Failed to export equipment');
-      console.error('Export error:', err);
-    }
+  const handleExport = () => {
+    const headers = ['ID', 'Name', 'Serial Number', 'Category', 'Location', 'Status', 'Department'];
+    const csvRows = equipmentData.map((equipment) =>
+      [
+        equipment.id,
+        equipment.name,
+        equipment.serialNumber,
+        equipment.category,
+        equipment.location,
+        equipment.status,
+        equipment.department || ''
+      ]
+        .map((field) => `"${String(field ?? '').replaceAll('"', '""')}"`)
+        .join(',')
+    );
+
+    const csvContent = [headers.join(','), ...csvRows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `equipment-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Handle Add Equipment
@@ -76,8 +122,8 @@ const EquipmentPage = () => {
     
     try {
       setSubmitting(true);
-      const newEquipment = await createEquipment(formData);
-      setEquipmentData([...equipmentData, newEquipment]);
+      const response = await equipmentAPI.create(buildEquipmentPayload(formData));
+      setEquipmentData((prev) => [...prev, response.data].sort((a, b) => a.name.localeCompare(b.name)));
       setShowAddModal(false);
       resetForm();
       alert('Equipment added successfully!');
@@ -95,7 +141,8 @@ const EquipmentPage = () => {
     
     try {
       setSubmitting(true);
-      const updated = await updateEquipment(selectedEquipment.id, formData);
+      const response = await equipmentAPI.update(selectedEquipment.id, buildEquipmentPayload(formData));
+      const updated = response.data;
       setEquipmentData(equipmentData.map(eq => eq.id === selectedEquipment.id ? updated : eq));
       setShowEditModal(false);
       setSelectedEquipment(null);
@@ -113,7 +160,7 @@ const EquipmentPage = () => {
   const handleDeleteEquipment = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       try {
-        await deleteEquipment(id);
+        await equipmentAPI.delete(id);
         setEquipmentData(equipmentData.filter(eq => eq.id !== id));
         setSelectedEquipment(null);
         alert('Equipment deleted successfully!');
@@ -138,8 +185,8 @@ const EquipmentPage = () => {
       department: equipment.department || '',
       assignedEmployeeName: equipment.assignedEmployeeName || '',
       assignedEmployeeEmail: equipment.assignedEmployeeEmail || '',
-      maintenanceTeamId: equipment.maintenanceTeamId || '',
-      defaultTechnicianId: equipment.defaultTechnicianId || '',
+      maintenanceTeamId: equipment.maintenanceTeamId ? String(equipment.maintenanceTeamId) : '',
+      defaultTechnicianId: equipment.defaultTechnicianId ? String(equipment.defaultTechnicianId) : '',
       status: equipment.status,
       notes: equipment.notes || '',
       safetyInstructions: equipment.safetyInstructions || ''
@@ -266,6 +313,15 @@ const EquipmentPage = () => {
           <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 rounded p-4 flex items-center gap-3">
             <AlertCircle className="w-5 h-5 text-yellow-400" />
             <p className="text-yellow-200">{error}</p>
+          </div>
+        )}
+
+        {teams.length === 0 && (
+          <div className="mb-6 bg-orange-500/10 border border-orange-500/30 rounded p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-orange-400" />
+            <p className="text-orange-200">
+              No maintenance teams are available. Equipment creation requires a team, so create at least one team first.
+            </p>
           </div>
         )}
 
@@ -522,14 +578,37 @@ const EquipmentPage = () => {
 
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Maintenance Team ID *</label>
-                  <input
-                    type="number"
+                  <select
                     name="maintenanceTeamId"
                     value={formData.maintenanceTeamId}
                     onChange={handleInputChange}
                     required
                     className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
-                  />
+                  >
+                    <option value="">Select a team</option>
+                    {teams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Default Technician</label>
+                  <select
+                    name="defaultTechnicianId"
+                    value={formData.defaultTechnicianId}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="">Unassigned</option>
+                    {technicians.map((technician) => (
+                      <option key={technician.id} value={technician.id}>
+                        {technician.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -651,6 +730,97 @@ const EquipmentPage = () => {
                 </div>
 
                 <div>
+                  <label className="block text-sm text-gray-400 mb-1">Purchase Date *</label>
+                  <input
+                    type="date"
+                    name="purchaseDate"
+                    value={formData.purchaseDate}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Warranty Expiry</label>
+                  <input
+                    type="date"
+                    name="warrantyExpiry"
+                    value={formData.warrantyExpiry}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Department</label>
+                  <input
+                    type="text"
+                    name="department"
+                    value={formData.department}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Maintenance Team *</label>
+                  <select
+                    name="maintenanceTeamId"
+                    value={formData.maintenanceTeamId}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="">Select a team</option>
+                    {teams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Default Technician</label>
+                  <select
+                    name="defaultTechnicianId"
+                    value={formData.defaultTechnicianId}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="">Unassigned</option>
+                    {technicians.map((technician) => (
+                      <option key={technician.id} value={technician.id}>
+                        {technician.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Assigned Employee Name</label>
+                  <input
+                    type="text"
+                    name="assignedEmployeeName"
+                    value={formData.assignedEmployeeName}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Assigned Employee Email</label>
+                  <input
+                    type="email"
+                    name="assignedEmployeeEmail"
+                    value={formData.assignedEmployeeEmail}
+                    onChange={handleInputChange}
+                    className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-sm text-gray-400 mb-1">Ownership Type *</label>
                   <select
                     name="ownershipType"
@@ -685,6 +855,17 @@ const EquipmentPage = () => {
                 <textarea
                   name="notes"
                   value={formData.notes}
+                  onChange={handleInputChange}
+                  rows="3"
+                  className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Safety Instructions</label>
+                <textarea
+                  name="safetyInstructions"
+                  value={formData.safetyInstructions}
                   onChange={handleInputChange}
                   rows="3"
                   className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-3 py-2 text-white focus:outline-none focus:border-cyan-500/50"

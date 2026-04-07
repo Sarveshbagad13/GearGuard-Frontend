@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertTriangle, CheckCircle2, Clock, User, Wrench, XCircle, AlertCircle } from 'lucide-react';
-import { maintenanceRequestAPI, equipmentAPI } from '../services/api';
+import { maintenanceRequestAPI, equipmentAPI, userAPI } from '../services/api';
+import { getStoredUser } from '../utils/auth';
 
 const RequestsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -10,9 +11,12 @@ const RequestsPage = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [requestsData, setRequestsData] = useState([]);
   const [equipmentOptions, setEquipmentOptions] = useState([]);
+  const [technicianOptions, setTechnicianOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
   const [newRequestForm, setNewRequestForm] = useState({
     title: '',
     equipmentId: '',
@@ -26,33 +30,42 @@ const RequestsPage = () => {
   useEffect(() => {
     fetchRequests();
     fetchEquipmentOptions();
+    fetchTechnicianOptions();
   }, []);
+
+  useEffect(() => {
+    if (selectedRequest) {
+      setSelectedTechnicianId(selectedRequest.rawData?.assignedToId ? String(selectedRequest.rawData.assignedToId) : '');
+    } else {
+      setSelectedTechnicianId('');
+    }
+  }, [selectedRequest]);
+
+  const mapRequestItem = (item) => ({
+    id: item.requestNumber || `REQ-${String(item.id).padStart(3, '0')}`,
+    title: item.subject,
+    equipmentId: item.equipmentId ? `EQ-${String(item.equipmentId).padStart(3, '0')}` : 'N/A',
+    equipmentName: item.equipment?.name || 'Unknown Equipment',
+    location: item.equipment?.location || 'N/A',
+    requestedBy: item.createdBy?.name || 'Unknown',
+    assignedTo: item.assignedTo?.name || 'Unassigned',
+    priority: mapBackendPriority(item.priority),
+    status: mapBackendStage(item.stage),
+    category: item.requestType,
+    description: item.description || '',
+    createdDate: new Date(item.requestDate).toISOString().split('T')[0],
+    dueDate: item.scheduledDate ? new Date(item.scheduledDate).toISOString().split('T')[0] : 'TBD',
+    completedDate: item.completedDate ? new Date(item.completedDate).toISOString().split('T')[0] : null,
+    estimatedTime: item.duration ? `${item.duration} hours` : 'N/A',
+    rawData: item
+  });
 
   const fetchRequests = async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await maintenanceRequestAPI.getAll();
-      
-      // Map backend data to frontend format
-      const mappedData = response.data.map(item => ({
-        id: item.requestNumber || `REQ-${String(item.id).padStart(3, '0')}`,
-        title: item.subject,
-        equipmentId: item.equipmentId ? `EQ-${String(item.equipmentId).padStart(3, '0')}` : 'N/A',
-        equipmentName: item.equipment?.name || 'Unknown Equipment',
-        location: item.equipment?.location || 'N/A',
-        requestedBy: item.createdBy?.name || 'Unknown',
-        assignedTo: item.assignedTo?.name || 'Unassigned',
-        priority: mapBackendPriority(item.priority),
-        status: mapBackendStage(item.stage),
-        category: item.requestType,
-        description: item.description || '',
-        createdDate: new Date(item.requestDate).toISOString().split('T')[0],
-        dueDate: item.scheduledDate ? new Date(item.scheduledDate).toISOString().split('T')[0] : 'TBD',
-        completedDate: item.completedDate ? new Date(item.completedDate).toISOString().split('T')[0] : null,
-        estimatedTime: item.duration ? `${item.duration} hours` : 'N/A',
-        rawData: item // Keep original data
-      }));
+      const mappedData = response.data.map(mapRequestItem);
       
       setRequestsData(mappedData);
     } catch (err) {
@@ -79,6 +92,16 @@ const RequestsPage = () => {
       console.error('Failed to fetch equipment options:', err);
       // Keep form usable with no options instead of breaking the page.
       setEquipmentOptions([]);
+    }
+  };
+
+  const fetchTechnicianOptions = async () => {
+    try {
+      const response = await userAPI.getAll({ role: 'Technician' });
+      setTechnicianOptions(Array.isArray(response?.data) ? response.data : []);
+    } catch (err) {
+      console.error('Failed to fetch technician options:', err);
+      setTechnicianOptions([]);
     }
   };
 
@@ -120,6 +143,7 @@ const RequestsPage = () => {
 
     try {
       setIsSubmitting(true);
+      const currentUser = getStoredUser();
 
       const payload = {
         subject: newRequestForm.title.trim(),
@@ -127,7 +151,8 @@ const RequestsPage = () => {
         equipment: Number(newRequestForm.equipmentId),
         requestType: mapCategoryToRequestType(newRequestForm.category),
         priority: newRequestForm.priority,
-        scheduledDate: newRequestForm.dueDate || null
+        scheduledDate: newRequestForm.dueDate || null,
+        createdById: currentUser?.id ?? null
       };
 
       await maintenanceRequestAPI.create(payload);
@@ -140,6 +165,51 @@ const RequestsPage = () => {
       alert(`Failed to create request: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const getAssignableTechnicians = () => {
+    if (!selectedRequest?.rawData?.maintenanceTeamId) {
+      return technicianOptions;
+    }
+
+    const filtered = technicianOptions.filter(
+      (technician) =>
+        technician.teamId === selectedRequest.rawData.maintenanceTeamId ||
+        technician.id === selectedRequest.rawData.assignedToId
+    );
+
+    return filtered.length > 0 ? filtered : technicianOptions;
+  };
+
+  const handleAssignTechnician = async () => {
+    if (!selectedRequest || !selectedTechnicianId) {
+      alert('Please select a technician first.');
+      return;
+    }
+
+    if (!selectedRequest.rawData?.id) {
+      alert('Technician assignment is unavailable while the page is showing sample request data.');
+      return;
+    }
+
+    try {
+      setAssignmentSubmitting(true);
+      const response = await maintenanceRequestAPI.update(selectedRequest.rawData.id, {
+        assignedToId: Number(selectedTechnicianId)
+      });
+
+      const updatedRequest = mapRequestItem(response.data);
+      setRequestsData((prev) =>
+        prev.map((request) => (request.rawData.id === selectedRequest.rawData.id ? updatedRequest : request))
+      );
+      setSelectedRequest(updatedRequest);
+      alert('Technician assigned successfully!');
+    } catch (err) {
+      console.error('Failed to assign technician:', err);
+      alert(err.message || 'Failed to assign technician');
+    } finally {
+      setAssignmentSubmitting(false);
     }
   };
 
@@ -428,6 +498,15 @@ const RequestsPage = () => {
           </div>
         )}
 
+        {equipmentOptions.length === 0 && (
+          <div className="mb-6 bg-orange-500/10 border border-orange-500/30 rounded p-4 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-orange-400" />
+            <p className="text-orange-200">
+              No equipment is available yet. Create equipment first before submitting maintenance requests.
+            </p>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           {stats.map((stat, idx) => (
@@ -495,48 +574,56 @@ const RequestsPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-cyan-900/20">
-                {filteredRequests.map((request) => (
-                  <tr 
-                    key={request.id}
-                    className="hover:bg-[#1a1f35] transition-colors cursor-pointer"
-                    onClick={() => setSelectedRequest(request)}
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-mono text-cyan-400">{request.id}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-semibold text-white">{request.title}</div>
-                      <div className={`text-xs ${getCategoryColor(request.category)}`}>{request.category}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-300">{request.equipmentName}</div>
-                      <div className="text-xs text-gray-500">{request.location}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {getPriorityBadge(request.priority)}
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(request.status)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-300 flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {request.assignedTo}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-300 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {request.dueDate}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <button className="text-gray-400 hover:text-cyan-400 transition-colors">
-                        <MoreVertical className="w-5 h-5" />
-                      </button>
+                {filteredRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                      No maintenance requests found
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredRequests.map((request) => (
+                    <tr 
+                      key={request.id}
+                      className="hover:bg-[#1a1f35] transition-colors cursor-pointer"
+                      onClick={() => setSelectedRequest(request)}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-mono text-cyan-400">{request.id}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-white">{request.title}</div>
+                        <div className={`text-xs ${getCategoryColor(request.category)}`}>{request.category}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-300">{request.equipmentName}</div>
+                        <div className="text-xs text-gray-500">{request.location}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {getPriorityBadge(request.priority)}
+                      </td>
+                      <td className="px-6 py-4">
+                        {getStatusBadge(request.status)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-300 flex items-center gap-1">
+                          <User className="w-3 h-3" />
+                          {request.assignedTo}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-300 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {request.dueDate}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button className="text-gray-400 hover:text-cyan-400 transition-colors">
+                          <MoreVertical className="w-5 h-5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -638,11 +725,43 @@ const RequestsPage = () => {
               </div>
             </div>
 
+            <div className="mb-6">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Assign Technician</div>
+              {!selectedRequest.rawData?.id && (
+                <div className="mb-3 text-sm text-yellow-400">
+                  Live assignment is unavailable while sample request data is being shown.
+                </div>
+              )}
+              <div className="flex gap-3">
+                <select
+                  value={selectedTechnicianId}
+                  onChange={(e) => setSelectedTechnicianId(e.target.value)}
+                  disabled={!selectedRequest.rawData?.id}
+                  className="flex-1 bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                >
+                  <option value="">Select technician</option>
+                  {getAssignableTechnicians().map((technician) => (
+                    <option key={technician.id} value={technician.id}>
+                      {technician.name} {technician.team?.name ? `- ${technician.team.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAssignTechnician}
+                  disabled={assignmentSubmitting || !selectedTechnicianId || !selectedRequest.rawData?.id}
+                  className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {assignmentSubmitting ? 'Saving...' : 'Assign'}
+                </button>
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <button className="flex-1 px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all">
                 Update Status
               </button>
-              <button className="flex-1 px-4 py-2 border border-cyan-500 text-cyan-400 font-bold uppercase tracking-wider hover:bg-cyan-500/10 transition-all">
+              <button className="flex-1 px-4 py-2 border border-cyan-500 text-cyan-400 font-bold uppercase tracking-wider bg-cyan-500/10 transition-all">
                 Assign Technician
               </button>
               <button className="px-4 py-2 border border-red-500 text-red-400 font-bold uppercase tracking-wider hover:bg-red-500/10 transition-all">

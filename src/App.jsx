@@ -7,6 +7,9 @@ import RequestPage from './Pages/RequestPage';
 import KanbanPage from './Pages/KanbanPage';
 import CalendarPage from './Pages/CalendarPage';
 import TeamPage from './Pages/TeamPage';
+import UserManagementPage from './Pages/UserManagementPage';
+import { getStoredUser } from './utils/auth';
+import { hasPermission } from './utils/rolePermissions';
 
 // Landing Page Components
 import Navbar from './components/Navbar';
@@ -33,13 +36,17 @@ function LandingPage() {
 }
 
 // Protected Route Component
-function ProtectedRoute({ children }) {
-  const user = localStorage.getItem('user');
-  
+function ProtectedRoute({ children, permission }) {
+  const user = getStoredUser();
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  
+
+  if (permission && !hasPermission(user.role, permission)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return children;
 }
 
@@ -99,6 +106,14 @@ function App() {
               <TeamPage />
             </ProtectedRoute>
           } 
+        />
+        <Route
+          path="/users"
+          element={
+            <ProtectedRoute permission="MANAGE_USERS">
+              <UserManagementPage />
+            </ProtectedRoute>
+          }
         />
         
         {/* Catch all - redirect to landing */}

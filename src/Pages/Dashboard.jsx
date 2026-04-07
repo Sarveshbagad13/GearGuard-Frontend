@@ -14,15 +14,17 @@ import {
   CheckCircle2,
   Clock
 } from 'lucide-react';
+import { getStoredUser, normalizeRole } from '../utils/auth';
+import { hasPermission } from '../utils/rolePermissions';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (userData) {
-      setUser(JSON.parse(userData));
+    const storedUser = getStoredUser();
+    if (storedUser) {
+      setUser(storedUser);
     } else {
       navigate('/login');
     }
@@ -33,22 +35,10 @@ const Dashboard = () => {
     navigate('/');
   };
 
-  const normalizeRole = (role) => {
-    if (!role || typeof role !== 'string') return 'User';
-    const normalized = role.trim().toLowerCase();
-    const roleMap = {
-      admin: 'Admin',
-      manager: 'Manager',
-      technician: 'Technician',
-      user: 'User'
-    };
-    return roleMap[normalized] || 'User';
-  };
-
   // Role-based module access
   const getModulesForRole = (userRole) => {
     const normalizedRole = normalizeRole(userRole);
-    void normalizedRole;
+    const canManageUsers = hasPermission(normalizedRole, 'MANAGE_USERS');
     const allModules = [
       {
         title: 'Equipment',
@@ -94,11 +84,23 @@ const Dashboard = () => {
         color: 'from-blue-400 to-blue-500',
         stats: 'Coordinate staff',
         roles: ['Admin', 'Manager']
+      },
+      {
+        title: 'Users',
+        description: 'Maintain user accounts and access levels',
+        icon: Users,
+        path: '/users',
+        color: 'from-red-500 to-orange-500',
+        stats: 'Admin only',
+        roles: ['Admin']
       }
     ];
 
-    // Keep all modules visible in dashboard quick access for every authenticated user.
-    return allModules;
+    if (canManageUsers) {
+      return allModules;
+    }
+
+    return allModules.filter((module) => module.path !== '/users');
   };
 
   const modules = user ? getModulesForRole(user.role) : [];
