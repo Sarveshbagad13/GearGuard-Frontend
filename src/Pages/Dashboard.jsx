@@ -159,11 +159,11 @@ const Dashboard = () => {
               
               <div className="flex items-center space-x-3 pl-4 border-l border-cyan-500/20">
                 <div className="text-right">
-                  <p className="text-sm font-medium text-gray-100">{user.name}</p>
+                  <p className="text-sm font-medium text-gray-100">{user?.name || 'User'}</p>
                   <p className="text-xs text-cyan-400">{userRole}</p>
                 </div>
                 <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg shadow-cyan-500/30">
-                  {user.name.charAt(0).toUpperCase()}
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
               </div>
               
@@ -184,7 +184,7 @@ const Dashboard = () => {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-100 mb-2">
-            Welcome back, {user.name}! 👋
+            Welcome back, {user?.name || 'User'}! 👋
           </h2>
           <p className="text-gray-400">
             {userRole === 'Admin' && 'You have full system access. Manage all equipment, teams, and maintenance operations.'}

@@ -1,14 +1,24 @@
 // API Configuration and Base Service
+import { getAccessToken } from '../utils/auth';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-// Generic API request handler with error handling
+// Generic API request handler with error handling and auth
 const apiRequest = async (endpoint, options = {}) => {
   try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    // Add authorization token if available
+    const token = getAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
       ...options,
     });
 
@@ -260,10 +270,82 @@ export const userAPI = {
   },
 };
 
+// Dashboard API
+export const dashboardAPI = {
+  // Admin dashboard
+  getAdminDashboard: async () => {
+    return apiRequest('/dashboard/admin');
+  },
+
+  // Technician dashboard
+  getTechnicianDashboard: async () => {
+    return apiRequest('/dashboard/technician');
+  },
+
+  // Employee dashboard
+  getEmployeeDashboard: async () => {
+    return apiRequest('/dashboard/employee');
+  },
+
+  // Team performance
+  getTeamPerformance: async () => {
+    return apiRequest('/dashboard/team-performance');
+  },
+};
+
+// Extended Maintenance Request API
+export const maintenanceRequestExtAPI = {
+  // Get my requests
+  getMyRequests: async () => {
+    return apiRequest('/maintenance-requests/my-requests');
+  },
+
+  // Assign technician (admin)
+  assignTechnician: async (id, assignedToId, scheduledDate) => {
+    return apiRequest(`/maintenance-requests/${id}/assign-technician`, {
+      method: 'PATCH',
+      body: JSON.stringify({ assignedToId, scheduledDate }),
+    });
+  },
+
+  // Start work (technician)
+  startWork: async (id) => {
+    return apiRequest(`/maintenance-requests/${id}/start-work`, {
+      method: 'PATCH',
+    });
+  },
+
+  // Add work notes (technician)
+  addNotes: async (id, notes) => {
+    return apiRequest(`/maintenance-requests/${id}/add-notes`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notes }),
+    });
+  },
+
+  // Complete request (technician)
+  completeRequest: async (id, actualCost, completionNotes) => {
+    return apiRequest(`/maintenance-requests/${id}/complete`, {
+      method: 'PATCH',
+      body: JSON.stringify({ actualCost, completionNotes }),
+    });
+  },
+
+  // Rate service (employee)
+  rateService: async (id, rating, feedback) => {
+    return apiRequest(`/maintenance-requests/${id}/rate`, {
+      method: 'PATCH',
+      body: JSON.stringify({ rating, feedback }),
+    });
+  },
+};
+
 export default {
   auth: authAPI,
   equipment: equipmentAPI,
   maintenanceRequest: maintenanceRequestAPI,
+  maintenanceRequestExt: maintenanceRequestExtAPI,
   team: teamAPI,
   user: userAPI,
+  dashboard: dashboardAPI,
 };
