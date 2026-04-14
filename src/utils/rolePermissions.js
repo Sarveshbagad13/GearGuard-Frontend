@@ -20,7 +20,7 @@ export const PERMISSIONS = {
   // Maintenance Request permissions
   VIEW_ALL_REQUESTS: [ROLES.ADMIN, ROLES.MANAGER],
   VIEW_ASSIGNED_REQUESTS: [ROLES.ADMIN, ROLES.MANAGER, ROLES.TECHNICIAN],
-  CREATE_REQUEST: [ROLES.ADMIN, ROLES.MANAGER, ROLES.TECHNICIAN, ROLES.USER],
+  CREATE_REQUEST: [ROLES.ADMIN, ROLES.MANAGER, ROLES.USER],
   ASSIGN_TECHNICIAN: [ROLES.ADMIN, ROLES.MANAGER],
   UPDATE_REQUEST_STATUS: [ROLES.ADMIN, ROLES.MANAGER, ROLES.TECHNICIAN],
   DELETE_REQUEST: [ROLES.ADMIN],
@@ -49,6 +49,10 @@ export const PERMISSIONS = {
  * @returns {boolean} - Whether the user has the permission
  */
 export const hasPermission = (userRole, permission) => {
+  if (Array.isArray(permission)) {
+    return permission.some((entry) => hasPermission(userRole, entry));
+  }
+
   const allowedRoles = PERMISSIONS[permission];
   if (!allowedRoles) {
     console.warn(`Permission "${permission}" is not defined`);

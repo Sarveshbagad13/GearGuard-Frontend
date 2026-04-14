@@ -14,12 +14,23 @@ import {
   CheckCircle2,
   Clock
 } from 'lucide-react';
-import { getStoredUser, normalizeRole } from '../utils/auth';
+import { getStoredUser, normalizeRole, clearAllAuth } from '../utils/auth';
 import { hasPermission } from '../utils/rolePermissions';
+import { equipmentAPI, maintenanceRequestAPI, dashboardAPI } from '../services/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+
+  // Live data state
+  const [statsData, setStatsData] = useState({
+    stat1: '-',
+    stat2: '-',
+    stat3: '-',
+    stat4: '-',
+  });
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
     const storedUser = getStoredUser();
@@ -30,9 +41,102 @@ const Dashboard = () => {
     }
   }, [navigate]);
 
+  // Fetch live dashboard data — branched by role
+  useEffect(() => {
+    if (!user) return;
+    const role = normalizeRole(user.role);
+
+    const fetchDashboardData = async () => {
+      setStatsLoading(true);
+      try {
+        if (role === 'Admin' || role === 'Manager') {
+          // ── Admin / Manager: system-wide overview ─────────────────────────
+          const dashRes = await dashboardAPI.getAdminDashboard().catch(() => null);
+          if (dashRes?.data) {
+            const d = dashRes.data;
+            setStatsData({
+              stat1: d.equipment.active,
+              stat2: d.requests.open,
+              stat3: d.requests.completedToday,
+              stat4: d.avgResponseTimeHours ? `${d.avgResponseTimeHours}h` : 'N/A',
+            });
+          }
+          // Recent: all requests newest-first
+          const reqRes = await maintenanceRequestAPI.getAll().catch(() => ({ data: [] }));
+          const requests = Array.isArray(reqRes.data) ? reqRes.data : [];
+          setRecentActivity(
+            [...requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5)
+          );
+
+        } else if (role === 'Technician') {
+          // ── Technician: personal task queue ────────────────────────────────
+          const dashRes = await dashboardAPI.getTechnicianDashboard().catch(() => null);
+          if (dashRes?.data) {
+            const d = dashRes.data;
+            setStatsData({
+              stat1: d.inProgress,
+              stat2: d.assigned,
+              stat3: d.completedToday,
+              stat4: d.overdue,
+            });
+            setRecentActivity(d.recentTasks || []);
+          }
+
+        } else {
+          // ── User / Employee: their own requests only ────────────────────────
+          const dashRes = await dashboardAPI.getEmployeeDashboard().catch(() => null);
+          if (dashRes?.data) {
+            const d = dashRes.data;
+            setStatsData({
+              stat1: d.total,
+              stat2: d.open,
+              stat3: d.completed,
+              stat4: d.inProgress,
+            });
+            setRecentActivity(d.myRequests || []);
+          }
+        }
+      } catch (err) {
+        console.error('Dashboard data fetch error:', err);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [user]);
+
   const handleLogout = () => {
-    localStorage.removeItem('user');
+    // Clear user object, accessToken, and refreshToken from localStorage
+    clearAllAuth();
     navigate('/');
+  };
+
+  // Helper: format a createdAt timestamp as a relative time string
+  const timeAgo = (dateStr) => {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins  = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  };
+
+  // Helper: map a request stage to icon/color/label
+  const getActivityMeta = (stage) => {
+    switch (stage) {
+      case 'Repaired':
+        return { icon: CheckCircle2, color: 'text-green-400', border: 'border-green-500/20 hover:border-green-500/40', label: 'Maintenance request completed' };
+      case 'In Progress':
+        return { icon: Clock,         color: 'text-blue-400',  border: 'border-blue-500/20  hover:border-blue-500/40',  label: 'Request in progress' };
+      case 'Scrap':
+        return { icon: AlertCircle,   color: 'text-red-400',   border: 'border-red-500/20   hover:border-red-500/40',   label: 'Equipment marked for scrap' };
+      default: // 'New'
+        return { icon: AlertCircle,   color: 'text-yellow-400',border: 'border-yellow-500/20 hover:border-yellow-500/40', label: 'New maintenance request created' };
+    }
   };
 
   // Role-based module access
@@ -96,22 +200,36 @@ const Dashboard = () => {
       }
     ];
 
-    if (canManageUsers) {
-      return allModules;
-    }
-
-    return allModules.filter((module) => module.path !== '/users');
+    // Filter strictly by the roles array on each module
+    return allModules.filter(module => module.roles.includes(normalizedRole));
   };
 
   const modules = user ? getModulesForRole(user.role) : [];
   const userRole = normalizeRole(user?.role);
 
-  const quickStats = [
-    { label: 'Active Equipment', value: '47', icon: Wrench, color: 'text-cyan-400' },
-    { label: 'Open Requests', value: '12', icon: AlertCircle, color: 'text-yellow-400' },
-    { label: 'Completed Today', value: '8', icon: CheckCircle2, color: 'text-green-400' },
-    { label: 'Avg Response Time', value: '2.4h', icon: Clock, color: 'text-blue-400' }
-  ];
+  // Role-specific stat cards
+  const v = (key) => statsLoading ? '…' : (statsData[key] ?? '-');
+  const quickStats =
+    userRole === 'Admin' || userRole === 'Manager'
+      ? [
+          { label: 'Active Equipment',  value: v('stat1'), icon: Wrench,       color: 'text-cyan-400'   },
+          { label: 'Open Requests',     value: v('stat2'), icon: AlertCircle,  color: 'text-yellow-400' },
+          { label: 'Completed Today',   value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
+          { label: 'Avg Response Time', value: v('stat4'), icon: Clock,        color: 'text-blue-400'   },
+        ]
+      : userRole === 'Technician'
+      ? [
+          { label: 'In Progress',       value: v('stat1'), icon: Clock,        color: 'text-blue-400'   },
+          { label: 'Assigned to Me',    value: v('stat2'), icon: Bell,         color: 'text-yellow-400' },
+          { label: 'Completed Today',   value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
+          { label: 'Overdue Tasks',     value: v('stat4'), icon: AlertCircle,  color: 'text-red-400'    },
+        ]
+      : [
+          { label: 'My Requests',       value: v('stat1'), icon: FileText,     color: 'text-cyan-400'   },
+          { label: 'Open',              value: v('stat2'), icon: AlertCircle,  color: 'text-yellow-400' },
+          { label: 'Completed',         value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
+          { label: 'In Progress',       value: v('stat4'), icon: Clock,        color: 'text-blue-400'   },
+        ];
 
   if (!user) {
     return (
@@ -142,13 +260,13 @@ const Dashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
-              <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white p-2 rounded-lg shadow-lg shadow-cyan-500/30">
-                <Wrench className="w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-100">GearGuard</h1>
-                <p className="text-sm text-cyan-400">The Ultimate Maintenance Tracker</p>
-              </div>
+              <div className="flex items-center">
+              <img
+                src="/gearguard-logo.png"
+                alt="GearGuard Logo"
+                className="h-12 w-auto object-contain"
+              />
+            </div>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -246,29 +364,43 @@ const Dashboard = () => {
               View all →
             </Link>
           </div>
-          <div className="space-y-4">
-            <div className="flex items-center p-4 bg-primary-darkest border border-green-500/20 rounded-lg hover:border-green-500/40 transition">
-              <CheckCircle2 className="w-5 h-5 text-green-400 mr-3" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-100">Maintenance Request #REQ-001 completed</p>
-                <p className="text-xs text-gray-400">CNC Machine A1 - 2 hours ago</p>
-              </div>
+          {statsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
             </div>
-            <div className="flex items-center p-4 bg-primary-darkest border border-yellow-500/20 rounded-lg hover:border-yellow-500/40 transition">
-              <AlertCircle className="w-5 h-5 text-yellow-400 mr-3" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-100">New maintenance request created</p>
-                <p className="text-xs text-gray-400">Forklift FL-205 - 4 hours ago</p>
-              </div>
+          ) : recentActivity.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              No recent activity found.
             </div>
-            <div className="flex items-center p-4 bg-primary-darkest border border-purple-500/20 rounded-lg hover:border-purple-500/40 transition">
-              <Calendar className="w-5 h-5 text-purple-400 mr-3" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-100">Preventive maintenance scheduled</p>
-                <p className="text-xs text-gray-400">Server Rack SR-12 - Tomorrow at 10:00 AM</p>
-              </div>
+          ) : (
+            <div className="space-y-4">
+              {recentActivity.map((req) => {
+                const meta = getActivityMeta(req.stage);
+                const Icon = meta.icon;
+                const equipmentName = req.equipment?.name || 'Unknown Equipment';
+                const requestNum   = req.requestNumber || `#${req.id}`;
+                return (
+                  <div
+                    key={req.id}
+                    className={`flex items-center p-4 bg-primary-darkest border ${meta.border} rounded-lg transition`}
+                  >
+                    <Icon className={`w-5 h-5 ${meta.color} mr-3 flex-shrink-0`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-100 truncate">
+                        {meta.label} — {requestNum}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {equipmentName} · {timeAgo(req.createdAt)}
+                      </p>
+                    </div>
+                    <span className={`ml-3 flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded ${meta.color} bg-white/5`}>
+                      {req.stage}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
       </main>
     </div>

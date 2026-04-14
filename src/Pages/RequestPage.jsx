@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertTriangle, CheckCircle2, Clock, User, Wrench, XCircle, AlertCircle } from 'lucide-react';
 import { maintenanceRequestAPI, equipmentAPI, userAPI } from '../services/api';
-import { getStoredUser } from '../utils/auth';
+import { getStoredUser, normalizeRole } from '../utils/auth';
+import { hasPermission } from '../utils/rolePermissions';
 
 const RequestsPage = () => {
+  const currentUser = getStoredUser();
+  const currentRole = normalizeRole(currentUser?.role);
+  const canCreateRequest = hasPermission(currentRole, 'CREATE_REQUEST');
+  const canAssignTechnician = hasPermission(currentRole, 'ASSIGN_TECHNICIAN');
+  const canUpdateRequestStatus = hasPermission(currentRole, 'UPDATE_REQUEST_STATUS');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
@@ -16,7 +22,9 @@ const RequestsPage = () => {
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('pending');
   const [newRequestForm, setNewRequestForm] = useState({
     title: '',
     equipmentId: '',
@@ -36,8 +44,10 @@ const RequestsPage = () => {
   useEffect(() => {
     if (selectedRequest) {
       setSelectedTechnicianId(selectedRequest.rawData?.assignedToId ? String(selectedRequest.rawData.assignedToId) : '');
+      setSelectedStatus(selectedRequest.status || 'pending');
     } else {
       setSelectedTechnicianId('');
+      setSelectedStatus('pending');
     }
   }, [selectedRequest]);
 
@@ -66,12 +76,18 @@ const RequestsPage = () => {
       setError(null);
       const response = await maintenanceRequestAPI.getAll();
       const mappedData = response.data.map(mapRequestItem);
+      const scopedData =
+        currentRole === 'Technician'
+          ? mappedData.filter((item) => item.rawData?.assignedTo?.id === currentUser?.id || item.rawData?.assignedToId === currentUser?.id)
+          : currentRole === 'User'
+          ? mappedData.filter((item) => item.rawData?.createdBy?.id === currentUser?.id || item.rawData?.createdById === currentUser?.id)
+          : mappedData;
       
-      setRequestsData(mappedData);
+      setRequestsData(scopedData);
     } catch (err) {
       console.error('Failed to fetch maintenance requests:', err);
-      setError('Failed to load maintenance requests. Using sample data.');
-      loadSampleData();
+      setError(err.message || 'Failed to load maintenance requests.');
+      setRequestsData([]);
     } finally {
       setLoading(false);
     }
@@ -106,8 +122,14 @@ const RequestsPage = () => {
   };
 
   const mapCategoryToRequestType = (category) => {
-    if (category === 'Preventive Maintenance') return 'Preventive';
-    return 'Corrective';
+    const categoryMap = {
+      'Repair': 'Corrective',
+      'Preventive Maintenance': 'Preventive',
+      'Emergency': 'Emergency',
+      'Inspection': 'Inspection',
+    };
+
+    return categoryMap[category] || 'Corrective';
   };
 
   const handleCreateInputChange = (field, value) => {
@@ -188,11 +210,6 @@ const RequestsPage = () => {
       return;
     }
 
-    if (!selectedRequest.rawData?.id) {
-      alert('Technician assignment is unavailable while the page is showing sample request data.');
-      return;
-    }
-
     try {
       setAssignmentSubmitting(true);
       const response = await maintenanceRequestAPI.update(selectedRequest.rawData.id, {
@@ -230,113 +247,54 @@ const RequestsPage = () => {
     return stageMap[stage] || 'pending';
   };
 
-  // Fallback sample data
-  const loadSampleData = () => {
-    const sampleData = [
-    {
-      id: 'REQ-001',
-      title: 'CNC Machine A1 - Strange Noise',
-      equipmentId: 'EQ-001',
-      equipmentName: 'CNC Machine A1',
-      location: 'Floor 2 - Bay 3',
-      requestedBy: 'John Smith',
-      assignedTo: 'Mike Johnson',
-      priority: 'high',
-      status: 'in-progress',
-      category: 'Repair',
-      description: 'Machine making unusual grinding noise during operation. Needs immediate inspection.',
-      createdDate: '2024-02-10',
-      dueDate: '2024-02-12',
-      completedDate: null,
-      estimatedTime: '4 hours',
-    },
-    {
-      id: 'REQ-002',
-      title: 'Forklift FL-205 - Scheduled Maintenance',
-      equipmentId: 'EQ-002',
-      equipmentName: 'Forklift FL-205',
-      location: 'Warehouse A',
-      requestedBy: 'Sarah Davis',
-      assignedTo: 'Tom Wilson',
-      priority: 'medium',
-      status: 'pending',
-      category: 'Preventive Maintenance',
-      description: 'Regular monthly maintenance check. Oil change, brake inspection, and safety check required.',
-      createdDate: '2024-02-11',
-      dueDate: '2024-02-15',
-      completedDate: null,
-      estimatedTime: '2 hours',
-    },
-    {
-      id: 'REQ-003',
-      title: 'Server Rack SR-12 - Cooling Fan Replacement',
-      equipmentId: 'EQ-003',
-      equipmentName: 'Server Rack SR-12',
-      location: 'Data Center - Row 5',
-      requestedBy: 'IT Department',
-      assignedTo: 'Alex Chen',
-      priority: 'critical',
-      status: 'in-progress',
-      category: 'Emergency',
-      description: 'Two cooling fans failed. Server temperature rising. Immediate action required.',
-      createdDate: '2024-02-12',
-      dueDate: '2024-02-12',
-      completedDate: null,
-      estimatedTime: '1 hour',
-    },
-    {
-      id: 'REQ-004',
-      title: 'HVAC Unit H-8 - Filter Replacement',
-      equipmentId: 'EQ-004',
-      equipmentName: 'HVAC Unit H-8',
-      location: 'Building C - Roof',
-      requestedBy: 'Facilities Team',
-      assignedTo: 'Robert Lee',
-      priority: 'low',
-      status: 'completed',
-      category: 'Preventive Maintenance',
-      description: 'Quarterly filter replacement and system inspection.',
-      createdDate: '2024-02-08',
-      dueDate: '2024-02-10',
-      completedDate: '2024-02-09',
-      estimatedTime: '30 minutes',
-    },
-    {
-      id: 'REQ-005',
-      title: 'Delivery Van DV-03 - Brake Issue',
-      equipmentId: 'EQ-005',
-      equipmentName: 'Delivery Van DV-03',
-      location: 'Parking Lot B',
-      requestedBy: 'Driver - Mark Taylor',
-      assignedTo: 'Unassigned',
-      priority: 'high',
-      status: 'pending',
-      category: 'Repair',
-      description: 'Brakes feel soft and require longer stopping distance. Safety concern.',
-      createdDate: '2024-02-12',
-      dueDate: '2024-02-13',
-      completedDate: null,
-      estimatedTime: '3 hours',
-    },
-      {
-        id: 'REQ-006',
-        title: 'Conveyor Belt CB-7 - Motor Failure',
-        equipmentId: 'EQ-006',
-        equipmentName: 'Conveyor Belt CB-7',
-        location: 'Floor 1 - Assembly',
-        requestedBy: 'Production Manager',
-        assignedTo: 'Emergency Team',
-        priority: 'critical',
-        status: 'in-progress',
-        category: 'Emergency',
-        description: 'Motor completely failed. Production line stopped. Need immediate replacement.',
-        createdDate: '2024-02-12',
-        dueDate: '2024-02-12',
-        completedDate: null,
-        estimatedTime: '6 hours',
-      },
-    ];
-    setRequestsData(sampleData);
+  const mapFrontendStatusToBackendStage = (status) => {
+    const statusMap = {
+      pending: 'New',
+      'in-progress': 'In Progress',
+      completed: 'Repaired',
+      cancelled: 'Scrap',
+    };
+    return statusMap[status] || 'New';
+  };
+
+  const handleUpdateRequestStatus = async (statusOverride) => {
+    const nextStatus = statusOverride || selectedStatus;
+
+    if (!selectedRequest?.rawData?.id) {
+      alert('Status updates are unavailable while the page is showing sample request data.');
+      return;
+    }
+
+    try {
+      setStatusSubmitting(true);
+      const response = await maintenanceRequestAPI.updateStage(
+        selectedRequest.rawData.id,
+        mapFrontendStatusToBackendStage(nextStatus)
+      );
+
+      const updatedRequest = mapRequestItem(response.data);
+      setRequestsData((prev) =>
+        prev.map((request) => (request.rawData.id === selectedRequest.rawData.id ? updatedRequest : request))
+      );
+      setSelectedRequest(updatedRequest);
+      setSelectedStatus(updatedRequest.status);
+      alert(`Request status updated to ${getStatusLabel(updatedRequest.status)}.`);
+    } catch (err) {
+      console.error('Failed to update request status:', err);
+      alert(err.message || 'Failed to update request status');
+    } finally {
+      setStatusSubmitting(false);
+    }
+  };
+
+  const handleCancelRequest = async () => {
+    if (!selectedRequest) return;
+
+    if (!window.confirm(`Cancel request "${selectedRequest.id}"?`)) {
+      return;
+    }
+
+    await handleUpdateRequestStatus('cancelled');
   };
 
   const getPriorityBadge = (priority) => {
@@ -373,6 +331,16 @@ const RequestsPage = () => {
         {config.label}
       </span>
     );
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      pending: 'Pending',
+      'in-progress': 'In Progress',
+      completed: 'Completed',
+      cancelled: 'Cancelled',
+    };
+    return labels[status] || 'Pending';
   };
 
   const getCategoryColor = (category) => {
@@ -480,13 +448,15 @@ const RequestsPage = () => {
               <Download className="w-4 h-4" />
               Export
             </button>
-            <button 
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold text-sm uppercase tracking-wider hover:bg-cyan-400 transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/30"
-            >
-              <Plus className="w-4 h-4" />
-              New Request
-            </button>
+            {canCreateRequest && (
+              <button 
+                onClick={() => setShowCreateModal(true)}
+                className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold text-sm uppercase tracking-wider hover:bg-cyan-400 transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/30"
+              >
+                <Plus className="w-4 h-4" />
+                New Request
+              </button>
+            )}
           </div>
         </div>
 
@@ -725,55 +695,102 @@ const RequestsPage = () => {
               </div>
             </div>
 
-            <div className="mb-6">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Assign Technician</div>
-              {!selectedRequest.rawData?.id && (
-                <div className="mb-3 text-sm text-yellow-400">
-                  Live assignment is unavailable while sample request data is being shown.
+            {canAssignTechnician && (
+              <div className="mb-6">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Assign Technician</div>
+                <div className="flex gap-3">
+                  <select
+                    value={selectedTechnicianId}
+                    onChange={(e) => setSelectedTechnicianId(e.target.value)}
+                    disabled={assignmentSubmitting}
+                    className="flex-1 bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="">Select technician</option>
+                    {getAssignableTechnicians().map((technician) => (
+                      <option key={technician.id} value={technician.id}>
+                        {technician.name} {technician.team?.name ? `- ${technician.team.name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleAssignTechnician}
+                    disabled={assignmentSubmitting || !selectedTechnicianId}
+                    className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {assignmentSubmitting ? 'Saving...' : 'Assign'}
+                  </button>
                 </div>
-              )}
-              <div className="flex gap-3">
-                <select
-                  value={selectedTechnicianId}
-                  onChange={(e) => setSelectedTechnicianId(e.target.value)}
-                  disabled={!selectedRequest.rawData?.id}
-                  className="flex-1 bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
-                >
-                  <option value="">Select technician</option>
-                  {getAssignableTechnicians().map((technician) => (
-                    <option key={technician.id} value={technician.id}>
-                      {technician.name} {technician.team?.name ? `- ${technician.team.name}` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleAssignTechnician}
-                  disabled={assignmentSubmitting || !selectedTechnicianId || !selectedRequest.rawData?.id}
-                  className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {assignmentSubmitting ? 'Saving...' : 'Assign'}
-                </button>
               </div>
-            </div>
+            )}
 
-            <div className="flex gap-3">
-              <button className="flex-1 px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all">
-                Update Status
-              </button>
-              <button className="flex-1 px-4 py-2 border border-cyan-500 text-cyan-400 font-bold uppercase tracking-wider bg-cyan-500/10 transition-all">
-                Assign Technician
-              </button>
-              <button className="px-4 py-2 border border-red-500 text-red-400 font-bold uppercase tracking-wider hover:bg-red-500/10 transition-all">
-                Cancel
-              </button>
-            </div>
+            {canUpdateRequestStatus && (
+              <div className="mb-6">
+                <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">Update Status</div>
+                <div className="flex gap-3">
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    disabled={statusSubmitting}
+                    className="flex-1 bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateRequestStatus()}
+                    disabled={statusSubmitting}
+                    className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {statusSubmitting ? 'Saving...' : 'Save Status'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {(canAssignTechnician || canUpdateRequestStatus) && (
+              <div className="flex gap-3">
+                {canUpdateRequestStatus && (
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateRequestStatus()}
+                    disabled={statusSubmitting}
+                    className="flex-1 px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Update Status
+                  </button>
+                )}
+                {canAssignTechnician && (
+                  <button
+                    type="button"
+                    onClick={handleAssignTechnician}
+                    disabled={assignmentSubmitting || !selectedTechnicianId}
+                    className="flex-1 px-4 py-2 border border-cyan-500 text-cyan-400 font-bold uppercase tracking-wider bg-cyan-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Assign Technician
+                  </button>
+                )}
+                {canUpdateRequestStatus && (
+                  <button
+                    type="button"
+                    onClick={handleCancelRequest}
+                    disabled={statusSubmitting}
+                    className="px-4 py-2 border border-red-500 text-red-400 font-bold uppercase tracking-wider hover:bg-red-500/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Create New Request Modal */}
-      {showCreateModal && (
+      {showCreateModal && canCreateRequest && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6" onClick={() => setShowCreateModal(false)}>
           <div className="bg-[#0f1729] border border-cyan-500/30 rounded-lg max-w-2xl w-full p-8" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-6">

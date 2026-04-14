@@ -19,29 +19,45 @@ export const normalizeRole = (role) => {
 };
 
 // Token management
-export const setAuthToken = (accessToken, refreshToken) => {
-  localStorage.setItem('accessToken', accessToken);
+const PERSISTENT_STORAGE = localStorage;
+const SESSION_STORAGE = sessionStorage;
+
+const readAuthValue = (key) => {
+  return PERSISTENT_STORAGE.getItem(key) ?? SESSION_STORAGE.getItem(key);
+};
+
+const writeAuthValue = (key, value, remember = true) => {
+  const target = remember ? PERSISTENT_STORAGE : SESSION_STORAGE;
+  const other = remember ? SESSION_STORAGE : PERSISTENT_STORAGE;
+  target.setItem(key, value);
+  other.removeItem(key);
+};
+
+export const setAuthToken = (accessToken, refreshToken, remember = true) => {
+  writeAuthValue('accessToken', accessToken, remember);
   if (refreshToken) {
-    localStorage.setItem('refreshToken', refreshToken);
+    writeAuthValue('refreshToken', refreshToken, remember);
   }
 };
 
 export const getAccessToken = () => {
-  return localStorage.getItem('accessToken');
+  return readAuthValue('accessToken');
 };
 
 export const getRefreshToken = () => {
-  return localStorage.getItem('refreshToken');
+  return readAuthValue('refreshToken');
 };
 
 export const clearAuthToken = () => {
-  localStorage.removeItem('accessToken');
-  localStorage.removeItem('refreshToken');
+  PERSISTENT_STORAGE.removeItem('accessToken');
+  PERSISTENT_STORAGE.removeItem('refreshToken');
+  SESSION_STORAGE.removeItem('accessToken');
+  SESSION_STORAGE.removeItem('refreshToken');
 };
 
 // User management
 export const getStoredUser = () => {
-  const rawUser = localStorage.getItem('user');
+  const rawUser = readAuthValue('user');
 
   if (!rawUser) {
     return null;
@@ -59,17 +75,18 @@ export const getStoredUser = () => {
   }
 };
 
-export const setStoredUser = (user) => {
+export const setStoredUser = (user, remember = true) => {
   if (user) {
-    localStorage.setItem('user', JSON.stringify({
+    writeAuthValue('user', JSON.stringify({
       ...user,
       role: normalizeRole(user.role),
-    }));
+    }), remember);
   }
 };
 
 export const clearStoredUser = () => {
-  localStorage.removeItem('user');
+  PERSISTENT_STORAGE.removeItem('user');
+  SESSION_STORAGE.removeItem('user');
 };
 
 // Clear all auth data
@@ -78,9 +95,12 @@ export const clearAllAuth = () => {
   clearStoredUser();
 };
 
-// Check if user is authenticated
+// Check if user is authenticated.
+// NOTE: The backend currently issues no JWT — the accessToken slot holds the
+// user's numeric ID as a pseudo-token so the infrastructure is ready when
+// JWT is added. We consider any session with a valid stored user as authenticated.
 export const isAuthenticated = () => {
-  return !!getAccessToken() && !!getStoredUser();
+  return !!getStoredUser();
 };
 
 // Check if user has specific role

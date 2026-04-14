@@ -70,7 +70,7 @@ function App() {
         <Route 
           path="/equipment" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute permission="VIEW_ALL_EQUIPMENT">
               <EquipmentPage />
             </ProtectedRoute>
           } 
@@ -78,7 +78,7 @@ function App() {
         <Route 
           path="/requests" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute permission={["CREATE_REQUEST", "VIEW_ASSIGNED_REQUESTS"]}>
               <RequestPage />
             </ProtectedRoute>
           } 
@@ -86,7 +86,7 @@ function App() {
         <Route 
           path="/kanban" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute permission="VIEW_KANBAN">
               <KanbanPage />
             </ProtectedRoute>
           } 
@@ -94,7 +94,7 @@ function App() {
         <Route 
           path="/calendar" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute permission="VIEW_CALENDAR">
               <CalendarPage />
             </ProtectedRoute>
           } 
@@ -102,7 +102,7 @@ function App() {
         <Route 
           path="/teams" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute permission="VIEW_TEAMS">
               <TeamPage />
             </ProtectedRoute>
           } 
