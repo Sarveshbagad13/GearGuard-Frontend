@@ -142,7 +142,7 @@ const Dashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
-              <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white p-2 rounded-lg shadow-lg shadow-cyan-500/30">
+              <div className="bg-linear-to-br from-cyan-500 to-cyan-600 text-white p-2 rounded-lg shadow-lg shadow-cyan-500/30">
                 <Wrench className="w-6 h-6" />
               </div>
               <div>
@@ -162,7 +162,7 @@ const Dashboard = () => {
                   <p className="text-sm font-medium text-gray-100">{user?.name || 'User'}</p>
                   <p className="text-xs text-cyan-400">{userRole}</p>
                 </div>
-                <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg shadow-cyan-500/30">
+                <div className="w-10 h-10 bg-linear-to-br from-cyan-500 to-cyan-600 rounded-full flex items-center justify-center text-white font-semibold shadow-lg shadow-cyan-500/30">
                   {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
               </div>
@@ -219,7 +219,7 @@ const Dashboard = () => {
                   to={module.path}
                   className="group bg-primary-darker rounded-xl border border-cyan-500/20 p-6 hover:border-cyan-500/40 transition-all duration-300 transform hover:-translate-y-1 shadow-lg shadow-cyan-500/5 hover:shadow-cyan-500/10"
                 >
-                  <div className={`w-12 h-12 bg-gradient-to-br ${module.color} rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg`}>
+                  <div className={`w-12 h-12 bg-linear-to-br ${module.color} rounded-lg flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg`}>
                     <Icon className="w-6 h-6 text-white" />
                   </div>
                   <h4 className="text-lg font-semibold text-gray-100 mb-2">
