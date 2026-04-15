@@ -5,13 +5,12 @@ const Footer = () => {
     <footer className="relative border-t border-cyan-900/20 bg-primary-dark py-2 px-6">
       <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12">
         <div className="space-y-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-cyan-500 flex items-center justify-center text-primary-dark font-bold text-sm">
-              G
-            </div>
-            <span className="text-xl font-bold">
-              GEAR<span className="text-cyan-500">-GUARD</span>
-            </span>
+          <div className="flex items-center">
+            <img
+              src="/gearguard-logo.png"
+              alt="GearGuard Logo"
+              className="h-12 w-auto object-contain"
+            />
           </div>
           <p className="text-gray-500 text-sm leading-relaxed">
             Advanced asset management infrastructure for the modern enterprise. 

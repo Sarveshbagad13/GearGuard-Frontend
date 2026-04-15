@@ -66,6 +66,20 @@ export const authAPI = {
   getCurrentUser: async () => {
     return apiRequest('/auth/me');
   },
+
+  // Request password reset email
+  requestPasswordReset: async (email) => {
+    return apiRequest('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  // Resolve the backend OAuth entrypoint for a provider
+  getSocialLoginUrl: (provider) => {
+    const normalizedProvider = String(provider || '').toLowerCase();
+    return `${API_BASE_URL}/auth/${normalizedProvider}`;
+  },
 };
 
 // Equipment API

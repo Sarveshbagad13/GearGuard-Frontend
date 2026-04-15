@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authAPI } from "../services/api";
+import { setStoredUser, setAuthToken } from "../utils/auth";
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700;900&display=swap');
@@ -603,61 +604,7 @@ function InputField({ label, type = "text", placeholder, icon, value, onChange, 
   );
 }
 
-function LoginForm({ onSwitch }) {
-  return (
-    <div className="nx-form-panel">
-      <StatusBadge label="SYSTEM ONLINE" />
-      <h2 className="nx-title" data-text="ACCESS LOGIN">ACCESS LOGIN</h2>
-      <p className="nx-sub">Enter your credentials to continue</p>
 
-      <InputField label="Email Address" type="email" placeholder="user@nexus.sys" icon={<IconMail />} />
-      <InputField label="Password" type="password" placeholder="••••••••" icon={<IconLock />} />
-
-      <div className="nx-row-opts">
-        <label className="nx-remember">
-          <input type="checkbox" className="nx-checkbox" />
-          Remember me
-        </label>
-        <button className="nx-forgot">Forgot password?</button>
-      </div>
-
-      <button className="nx-btn-auth">Authenticate</button>
-
-      <div className="nx-or">OR CONTINUE WITH</div>
-
-      <div className="nx-social-row">
-        <button className="nx-btn-social"><IconGithub /> GitHub</button>
-        <button className="nx-btn-social"><IconGoogle /> Google</button>
-      </div>
-
-      <div className="nx-stats">
-        {[["256-BIT", "Encryption"], ["99.99%", "Uptime"], ["24/7", "Support"]].map(([val, lbl]) => (
-          <div key={lbl}>
-            <div className="nx-stat-val">{val}</div>
-            <div className="nx-stat-lbl">{lbl}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SignupForm({ onSwitch }) {
-  return (
-    <div className="nx-form-panel hidden">
-      <StatusBadge label="NEW REGISTRATION" />
-      <h2 className="nx-title" data-text="CREATE ACCOUNT">CREATE ACCOUNT</h2>
-      <p className="nx-sub">Initialize your access credentials</p>
-
-      <InputField label="Full Name"        type="text"     placeholder="Agent Name"       icon={<IconUser />}   />
-      <InputField label="Email Address"    type="email"    placeholder="user@nexus.sys"    icon={<IconMail />}   />
-      <InputField label="Password"         type="password" placeholder="Min. 8 characters" icon={<IconLock />}   />
-      <InputField label="Confirm Password" type="password" placeholder="Repeat password"   icon={<IconShield />} />
-
-      <button className="nx-btn-auth" style={{ marginTop: 10 }}>Initialize Account</button>
-    </div>
-  );
-}
 
 function RingAnimation() {
   return (
@@ -683,6 +630,10 @@ function RingAnimation() {
 export default function GGAuth() {
   const [isSignup, setIsSignup] = useState(false);
   const navigate = useNavigate();
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [socialSubmitting, setSocialSubmitting] = useState('');
   
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -717,6 +668,47 @@ export default function GGAuth() {
     }));
   };
 
+  const handleForgotPassword = (e) => {
+    e.preventDefault();
+    setResetEmail(loginData.email || '');
+    setShowResetModal(true);
+  };
+
+  const handleSocialLogin = (provider) => (e) => {
+    e.preventDefault();
+    try {
+      setSocialSubmitting(provider);
+      const redirectUrl = authAPI.getSocialLoginUrl(provider);
+      window.location.assign(redirectUrl);
+    } catch (error) {
+      console.error(`${provider} login error:`, error);
+      setSocialSubmitting('');
+      alert(`${provider} login could not be started. ${error.message || ''}`.trim());
+    }
+  };
+
+  const handlePasswordResetRequest = async (e) => {
+    e.preventDefault();
+
+    if (!resetEmail.trim()) {
+      alert('Please enter the email address for password recovery.');
+      return;
+    }
+
+    try {
+      setResetSubmitting(true);
+      const response = await authAPI.requestPasswordReset(resetEmail.trim().toLowerCase());
+      const message = response?.message || 'If an account exists for that email, reset instructions have been sent.';
+      alert(message);
+      setShowResetModal(false);
+    } catch (error) {
+      console.error('Password reset request failed:', error);
+      alert(error.message || 'Failed to request password reset.');
+    } finally {
+      setResetSubmitting(false);
+    }
+  };
+
   // Handle login submission
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -727,10 +719,11 @@ export default function GGAuth() {
       
       if (response.success) {
         console.log('Login successful:', response.data);
-        
-        // Store user data in localStorage
-        localStorage.setItem('user', JSON.stringify(response.data));
-        
+
+        // Store the user object (normalises role) and the signed JWT.
+        setStoredUser(response.data, loginData.remember);
+        setAuthToken(response.token, undefined, loginData.remember); // real JWT signed by the backend
+
         // Redirect to dashboard
         navigate('/dashboard');
       } else {
@@ -767,10 +760,11 @@ export default function GGAuth() {
       
       if (response.success) {
         console.log('Signup successful:', response.data);
-        
-        // Store user data in localStorage
-        localStorage.setItem('user', JSON.stringify(response.data));
-        
+
+        // Store the user object (normalises role) and the signed JWT.
+        setStoredUser(response.data, true);
+        setAuthToken(response.token, undefined, true); // real JWT signed by the backend
+
         alert(`Welcome, ${response.data.name}!\n\nAccount created successfully!`);
         // Redirect to dashboard
         navigate('/dashboard');
@@ -838,13 +832,29 @@ export default function GGAuth() {
                   />
                   Remember me
                 </label>
-                <button className="nx-forgot">Forgot password?</button>
+                <button className="nx-forgot" onClick={handleForgotPassword}>Forgot password?</button>
               </div>
               <button className="nx-btn-auth" onClick={handleLogin}>Authenticate</button>
               <div className="nx-or">OR CONTINUE WITH</div>
               <div className="nx-social-row">
-                <button className="nx-btn-social"><IconGithub /> GitHub</button>
-                <button className="nx-btn-social"><IconGoogle /> Google</button>
+                <button
+                  className="nx-btn-social"
+                  onClick={handleSocialLogin('GitHub')}
+                  disabled={socialSubmitting === 'GitHub'}
+                  title="Continue with GitHub"
+                  style={socialSubmitting === 'GitHub' ? { opacity: 0.7, cursor: 'progress' } : undefined}
+                >
+                  <IconGithub /> {socialSubmitting === 'GitHub' ? 'Redirecting...' : 'GitHub'}
+                </button>
+                <button
+                  className="nx-btn-social"
+                  onClick={handleSocialLogin('Google')}
+                  disabled={socialSubmitting === 'Google'}
+                  title="Continue with Google"
+                  style={socialSubmitting === 'Google' ? { opacity: 0.7, cursor: 'progress' } : undefined}
+                >
+                  <IconGoogle /> {socialSubmitting === 'Google' ? 'Redirecting...' : 'Google'}
+                </button>
               </div>
               <div className="nx-stats">
                 {[["256-BIT","Encryption"],["99.99%","Uptime"],["24/7","Support"]].map(([v,l])=>(
@@ -885,10 +895,10 @@ export default function GGAuth() {
                 value={signupData.password}
                 onChange={handleSignupChange}
               />
-              <InputField 
-                label="Confirm Password" 
-                type="password" 
-                placeholder="Repeat password" 
+              <InputField
+                label="Confirm Password"
+                type="password"
+                placeholder="Repeat password"
                 icon={<IconShield />}
                 name="confirmPassword"
                 value={signupData.confirmPassword}
@@ -917,6 +927,79 @@ export default function GGAuth() {
           <div className="nx-footer">PROTECTED BY NEXUS SECURITY PROTOCOL v4.2</div>
         </div>
       </div>
+
+      {showResetModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.82)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: '24px',
+          }}
+          onClick={() => !resetSubmitting && setShowResetModal(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '420px',
+              background: '#0d1014',
+              border: '1px solid rgba(0,200,224,0.18)',
+              boxShadow: '0 0 0 1px rgba(0,200,224,0.08), 0 24px 60px rgba(0,0,0,0.65)',
+              padding: '28px',
+              color: '#e4eef2',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="nx-badge" style={{ marginBottom: '16px' }}>
+              <span className="nx-dot" />
+              PASSWORD RECOVERY
+            </div>
+
+            <h3 className="nx-title" data-text="RESET ACCESS" style={{ fontSize: '28px', marginBottom: '10px' }}>
+              RESET ACCESS
+            </h3>
+            <p className="nx-sub" style={{ marginBottom: '18px' }}>
+              Enter your account email and we&apos;ll request a password reset from the backend.
+            </p>
+
+            <form onSubmit={handlePasswordResetRequest}>
+              <InputField
+                label="Email Address"
+                type="email"
+                placeholder="user@nexus.sys"
+                icon={<IconMail />}
+                name="resetEmail"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+              />
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '18px' }}>
+                <button
+                  type="submit"
+                  className="nx-btn-auth"
+                  disabled={resetSubmitting}
+                  style={{ flex: 1, opacity: resetSubmitting ? 0.7 : 1 }}
+                >
+                  {resetSubmitting ? 'Requesting...' : 'Send Reset Link'}
+                </button>
+                <button
+                  type="button"
+                  className="nx-btn-outline"
+                  onClick={() => setShowResetModal(false)}
+                  disabled={resetSubmitting}
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

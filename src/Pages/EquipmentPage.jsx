@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, Download, AlertCircle, CheckCircle, Wrench, Edit, Trash2, X } from 'lucide-react';
 import { equipmentAPI, teamAPI, userAPI } from '../services/api';
+import { getStoredUser, normalizeRole } from '../utils/auth';
+import { hasPermission } from '../utils/rolePermissions';
 
-const technicianAssignableRoles = new Set(['Admin', 'Manager', 'Technician']);
+const technicianAssignableRoles = new Set(['Technician']);
 
 const EquipmentPage = () => {
+  const currentUser = getStoredUser();
+  const currentRole = normalizeRole(currentUser?.role);
+  const canCreateEquipment = hasPermission(currentRole, 'CREATE_EQUIPMENT');
+  const canUpdateEquipment = hasPermission(currentRole, 'UPDATE_EQUIPMENT');
+  const canDeleteEquipment = hasPermission(currentRole, 'DELETE_EQUIPMENT');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -295,16 +302,18 @@ const EquipmentPage = () => {
               Export
             </button>
             
-            <button 
-              onClick={() => {
-                resetForm();
-                setShowAddModal(true);
-              }}
-              className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold text-sm uppercase tracking-wider hover:bg-cyan-400 transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/30"
-            >
-              <Plus className="w-4 h-4" />
-              Add Equipment
-            </button>
+            {canCreateEquipment && (
+              <button 
+                onClick={() => {
+                  resetForm();
+                  setShowAddModal(true);
+                }}
+                className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold text-sm uppercase tracking-wider hover:bg-cyan-400 transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/30"
+              >
+                <Plus className="w-4 h-4" />
+                Add Equipment
+              </button>
+            )}
           </div>
         </div>
 
@@ -389,13 +398,15 @@ const EquipmentPage = () => {
                   <th className="px-6 py-4 text-left text-xs font-bold text-cyan-400 uppercase tracking-wider">Location</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-cyan-400 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-cyan-400 uppercase tracking-wider">Department</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-cyan-400 uppercase tracking-wider">Actions</th>
+                  {(canUpdateEquipment || canDeleteEquipment) && (
+                    <th className="px-6 py-4 text-left text-xs font-bold text-cyan-400 uppercase tracking-wider">Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-cyan-900/20">
                 {filteredEquipment.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={canUpdateEquipment || canDeleteEquipment ? '7' : '6'} className="px-6 py-12 text-center text-gray-500">
                       No equipment found
                     </td>
                   </tr>
@@ -424,24 +435,30 @@ const EquipmentPage = () => {
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-300">{equipment.department || 'N/A'}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => openEditModal(equipment)}
-                            className="text-blue-400 hover:text-blue-300 transition-colors"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteEquipment(equipment.id, equipment.name)}
-                            className="text-red-400 hover:text-red-300 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {(canUpdateEquipment || canDeleteEquipment) && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex gap-2">
+                            {canUpdateEquipment && (
+                              <button 
+                                onClick={() => openEditModal(equipment)}
+                                className="text-blue-400 hover:text-blue-300 transition-colors"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            )}
+                            {canDeleteEquipment && (
+                              <button 
+                                onClick={() => handleDeleteEquipment(equipment.id, equipment.name)}
+                                className="text-red-400 hover:text-red-300 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -459,7 +476,7 @@ const EquipmentPage = () => {
       </div>
 
       {/* Add Equipment Modal */}
-      {showAddModal && (
+      {showAddModal && canCreateEquipment && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6 overflow-y-auto">
           <div className="bg-[#0f1729] border border-cyan-500/30 rounded-lg max-w-2xl w-full p-8 my-8">
             <div className="flex items-start justify-between mb-6">
@@ -660,7 +677,7 @@ const EquipmentPage = () => {
       )}
 
       {/* Edit Equipment Modal */}
-      {showEditModal && (
+      {showEditModal && canUpdateEquipment && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-6 overflow-y-auto">
           <div className="bg-[#0f1729] border border-cyan-500/30 rounded-lg max-w-2xl w-full p-8 my-8">
             <div className="flex items-start justify-between mb-6">
