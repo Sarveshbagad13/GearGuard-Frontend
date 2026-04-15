@@ -68,11 +68,8 @@ const mapRequestTypeToEventType = (type) => {
 const mapEventTypeToRequestType = (type) => {
   switch (type) {
     case 'preventive':
-      return 'Preventive';
     case 'inspection':
-      return 'Inspection';
-    case 'emergency':
-      return 'Emergency';
+      return 'Preventive';
     default:
       return 'Corrective';
   }
@@ -95,6 +92,7 @@ const getStatusBadge = (status) => ({
   scheduled: { color: 'bg-yellow-500/20 text-yellow-400', label: 'Scheduled' },
   'in-progress': { color: 'bg-blue-500/20 text-blue-400', label: 'In Progress' },
   completed: { color: 'bg-green-500/20 text-green-400', label: 'Completed' },
+  overdue: { color: 'bg-red-500/20 text-red-400', label: 'Overdue' },
   cancelled: { color: 'bg-gray-500/20 text-gray-400', label: 'Cancelled' },
 }[status] || { color: 'bg-yellow-500/20 text-yellow-400', label: 'Scheduled' });
 
@@ -129,6 +127,7 @@ function CalendarPage() {
   const [submitting, setSubmitting] = useState(false);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [nowTs, setNowTs] = useState(Date.now());
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -160,9 +159,11 @@ function CalendarPage() {
     };
   };
 
-  const fetchEvents = async () => {
+  const fetchEvents = async ({ background = false } = {}) => {
     try {
-      setLoading(true);
+      if (!background) {
+        setLoading(true);
+      }
       setError(null);
       const start = new Date(year, month, 1, 0, 0, 0, 0).toISOString();
       const end = new Date(year, month + 1, 0, 23, 59, 59, 999).toISOString();
@@ -181,7 +182,9 @@ function CalendarPage() {
       setError(err.message || 'Failed to load maintenance schedule.');
       setMaintenanceEvents([]);
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
   };
 
@@ -201,6 +204,42 @@ function CalendarPage() {
 
   useEffect(() => { fetchOptions(); }, []);
   useEffect(() => { fetchEvents(); }, [year, month]);
+
+  useEffect(() => {
+    const refreshTimer = setInterval(() => {
+      fetchEvents({ background: true });
+    }, 30000);
+
+    const clockTimer = setInterval(() => {
+      setNowTs(Date.now());
+    }, 60000);
+
+    const refreshOnFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchEvents({ background: true });
+        setNowTs(Date.now());
+      }
+    };
+
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnFocus);
+
+    return () => {
+      clearInterval(refreshTimer);
+      clearInterval(clockTimer);
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnFocus);
+    };
+  }, [year, month]);
+
+  const isEventOverdue = (event) => {
+    if (!event) return false;
+    if (event.status === 'completed' || event.status === 'cancelled') return false;
+    const dueDateTime = combineDateAndTime(event.date, event.endTime || event.startTime);
+    if (!dueDateTime) return false;
+    const dueTs = new Date(dueDateTime).getTime();
+    return !Number.isNaN(dueTs) && dueTs < nowTs;
+  };
 
   const calendarDays = useMemo(() => {
     const days = [];
@@ -228,7 +267,7 @@ function CalendarPage() {
       return eventDate >= today && eventDate <= weekFromNow;
     }).length, color: 'text-blue-400' },
     { label: 'In Progress', value: maintenanceEvents.filter((event) => event.status === 'in-progress').length, color: 'text-orange-400' },
-    { label: 'Completed', value: maintenanceEvents.filter((event) => event.status === 'completed').length, color: 'text-green-400' },
+    { label: 'Overdue', value: maintenanceEvents.filter((event) => isEventOverdue(event)).length, color: 'text-red-400' },
   ];
 
   const handleExport = () => {
@@ -388,7 +427,7 @@ function CalendarPage() {
                 </div>
               </div>
               <div className="p-6">
-                {selectedDateEvents.length === 0 ? <div className="text-center py-12"><div className="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><CalendarDays className="w-8 h-8 text-cyan-400" /></div><h3 className="text-lg font-semibold text-gray-400 mb-2">No Events Scheduled</h3><p className="text-sm text-gray-600">No maintenance activities planned for this date.</p></div> : <div className="space-y-3">{selectedDateEvents.map((event) => { const status = getStatusBadge(event.status); return <div key={event.id} className="group relative"><div className={`absolute left-0 top-0 bottom-0 w-1 rounded-full ${getTypeColor(event.type)}`} /><div className="ml-6 bg-[#1a1f35] border border-cyan-900/20 rounded-lg p-4 hover:border-cyan-500/50 transition-all cursor-pointer" onClick={() => setSelectedEvent(event)}><div className="flex items-start justify-between mb-3 gap-4"><div className="flex-1"><div className="flex items-center gap-2 mb-2"><span className="text-cyan-400 font-mono text-sm font-semibold">{event.startTime} - {event.endTime}</span><div className={`w-2 h-2 rounded-full ${getPriorityDot(event.priority)}`} /></div><h4 className="text-white font-bold text-lg mb-1">{event.title}</h4><p className="text-gray-400 text-sm">{event.description || 'No additional description provided.'}</p></div><div className={`px-3 py-1 rounded ${status.color} text-xs font-semibold uppercase`}>{status.label}</div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm"><div className="flex items-center gap-2 text-gray-400"><Wrench className="w-4 h-4" /><span>{event.equipmentName}</span></div><div className="flex items-center gap-2 text-gray-400"><User className="w-4 h-4" /><span>{event.technician}</span></div><div className="flex items-center gap-2 text-gray-400"><MapPin className="w-4 h-4" /><span>{event.location}</span></div></div></div></div>; })}</div>}
+                {selectedDateEvents.length === 0 ? <div className="text-center py-12"><div className="w-16 h-16 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><CalendarDays className="w-8 h-8 text-cyan-400" /></div><h3 className="text-lg font-semibold text-gray-400 mb-2">No Events Scheduled</h3><p className="text-sm text-gray-600">No maintenance activities planned for this date.</p></div> : <div className="space-y-3">{selectedDateEvents.map((event) => { const effectiveStatus = isEventOverdue(event) ? 'overdue' : event.status; const status = getStatusBadge(effectiveStatus); return <div key={event.id} className="group relative"><div className={`absolute left-0 top-0 bottom-0 w-1 rounded-full ${getTypeColor(event.type)}`} /><div className="ml-6 bg-[#1a1f35] border border-cyan-900/20 rounded-lg p-4 hover:border-cyan-500/50 transition-all cursor-pointer" onClick={() => setSelectedEvent(event)}><div className="flex items-start justify-between mb-3 gap-4"><div className="flex-1"><div className="flex items-center gap-2 mb-2"><span className="text-cyan-400 font-mono text-sm font-semibold">{event.startTime} - {event.endTime}</span><div className={`w-2 h-2 rounded-full ${getPriorityDot(event.priority)}`} /></div><h4 className="text-white font-bold text-lg mb-1">{event.title}</h4><p className="text-gray-400 text-sm">{event.description || 'No additional description provided.'}</p></div><div className={`px-3 py-1 rounded ${status.color} text-xs font-semibold uppercase`}>{status.label}</div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm"><div className="flex items-center gap-2 text-gray-400"><Wrench className="w-4 h-4" /><span>{event.equipmentName}</span></div><div className="flex items-center gap-2 text-gray-400"><User className="w-4 h-4" /><span>{event.technician}</span></div><div className="flex items-center gap-2 text-gray-400"><MapPin className="w-4 h-4" /><span>{event.location}</span></div></div></div></div>; })}</div>}
               </div>
             </div>
           </div>
@@ -403,7 +442,7 @@ function CalendarPage() {
               <button onClick={() => setSelectedEvent(null)} className="text-gray-400 hover:text-white transition-colors text-2xl">×</button>
             </div>
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2"><div className={`px-3 py-1 rounded ${getTypeColor(selectedEvent.type)} text-white text-sm font-semibold`}>{selectedEvent.type}</div><div className={`px-3 py-1 rounded ${getStatusBadge(selectedEvent.status).color} text-sm font-semibold`}>{getStatusBadge(selectedEvent.status).label}</div><div className="flex items-center gap-2 px-3 py-1 rounded bg-gray-700/50 text-sm"><div className={`w-2 h-2 rounded-full ${getPriorityDot(selectedEvent.priority)}`} /><span className="text-white capitalize">{selectedEvent.priority} Priority</span></div></div>
+              <div className="flex flex-wrap gap-2"><div className={`px-3 py-1 rounded ${getTypeColor(selectedEvent.type)} text-white text-sm font-semibold`}>{selectedEvent.type}</div><div className={`px-3 py-1 rounded ${getStatusBadge(isEventOverdue(selectedEvent) ? 'overdue' : selectedEvent.status).color} text-sm font-semibold`}>{getStatusBadge(isEventOverdue(selectedEvent) ? 'overdue' : selectedEvent.status).label}</div><div className="flex items-center gap-2 px-3 py-1 rounded bg-gray-700/50 text-sm"><div className={`w-2 h-2 rounded-full ${getPriorityDot(selectedEvent.priority)}`} /><span className="text-white capitalize">{selectedEvent.priority} Priority</span></div></div>
               <div className="grid grid-cols-2 gap-4"><div><div className="text-xs text-gray-500 uppercase mb-1">Equipment</div><div className="text-white font-semibold">{selectedEvent.equipmentName}</div><div className="text-xs text-gray-500">{selectedEvent.requestNumber}</div></div><div><div className="text-xs text-gray-500 uppercase mb-1">Location</div><div className="text-white">{selectedEvent.location}</div></div><div><div className="text-xs text-gray-500 uppercase mb-1">Assigned Technician</div><div className="text-white">{selectedEvent.technician}</div></div><div><div className="text-xs text-gray-500 uppercase mb-1">Duration</div><div className="text-white">{durationFromTimes(selectedEvent.startTime, selectedEvent.endTime)} hour(s)</div></div></div>
               <div><div className="text-xs text-gray-500 uppercase mb-2">Description</div><div className="bg-[#1a1f35] rounded p-4 text-gray-300">{selectedEvent.description || 'No additional description provided.'}</div></div>
               <div className="flex flex-wrap gap-3 pt-4">

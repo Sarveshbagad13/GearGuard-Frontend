@@ -8,6 +8,7 @@ import KanbanPage from './Pages/KanbanPage';
 import CalendarPage from './Pages/CalendarPage';
 import TeamPage from './Pages/TeamPage';
 import UserManagementPage from './Pages/UserManagementPage';
+import NotificationsPage from './Pages/NotificationsPage';
 import { getStoredUser } from './utils/auth';
 import { hasPermission } from './utils/rolePermissions';
 
@@ -112,6 +113,14 @@ function App() {
           element={
             <ProtectedRoute permission="MANAGE_USERS">
               <UserManagementPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationsPage />
             </ProtectedRoute>
           }
         />

@@ -307,6 +307,42 @@ export const dashboardAPI = {
   },
 };
 
+// Notification API
+export const notificationAPI = {
+  // Get my notifications (paginated)
+  getMyNotifications: async (filters = {}) => {
+    const queryParams = new URLSearchParams(filters).toString();
+    const endpoint = queryParams ? `/notifications?${queryParams}` : '/notifications';
+    return apiRequest(endpoint);
+  },
+
+  // Get unread notification count
+  getUnreadCount: async () => {
+    return apiRequest('/notifications/unread-count');
+  },
+
+  // Mark one notification as read
+  markAsRead: async (id) => {
+    return apiRequest(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    });
+  },
+
+  // Mark all notifications as read
+  markAllAsRead: async () => {
+    return apiRequest('/notifications/read-all', {
+      method: 'PATCH',
+    });
+  },
+
+  // Delete notification
+  delete: async (id) => {
+    return apiRequest(`/notifications/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
 // Extended Maintenance Request API
 export const maintenanceRequestExtAPI = {
   // Get my requests
@@ -362,4 +398,5 @@ export default {
   team: teamAPI,
   user: userAPI,
   dashboard: dashboardAPI,
+  notification: notificationAPI,
 };

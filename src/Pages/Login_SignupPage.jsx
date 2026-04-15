@@ -718,11 +718,15 @@ export default function GGAuth() {
       const response = await authAPI.login(loginData.email, loginData.password);
       
       if (response.success) {
-        console.log('Login successful:', response.data);
+        const user = response.data?.user ?? response.data;
+        const accessToken = response.token ?? response.data?.tokens?.accessToken;
+        const refreshToken = response.data?.tokens?.refreshToken;
+
+        console.log('Login successful:', user);
 
         // Store the user object (normalises role) and the signed JWT.
-        setStoredUser(response.data, loginData.remember);
-        setAuthToken(response.token, undefined, loginData.remember); // real JWT signed by the backend
+        setStoredUser(user, loginData.remember);
+        setAuthToken(accessToken, refreshToken, loginData.remember); // real JWT signed by the backend
 
         // Redirect to dashboard
         navigate('/dashboard');
@@ -759,13 +763,17 @@ export default function GGAuth() {
       });
       
       if (response.success) {
-        console.log('Signup successful:', response.data);
+        const user = response.data?.user ?? response.data;
+        const accessToken = response.token ?? response.data?.tokens?.accessToken;
+        const refreshToken = response.data?.tokens?.refreshToken;
+
+        console.log('Signup successful:', user);
 
         // Store the user object (normalises role) and the signed JWT.
-        setStoredUser(response.data, true);
-        setAuthToken(response.token, undefined, true); // real JWT signed by the backend
+        setStoredUser(user, true);
+        setAuthToken(accessToken, refreshToken, true); // real JWT signed by the backend
 
-        alert(`Welcome, ${response.data.name}!\n\nAccount created successfully!`);
+        alert(`Welcome, ${user?.name || signupData.fullName}!\n\nAccount created successfully!`);
         // Redirect to dashboard
         navigate('/dashboard');
       } else {

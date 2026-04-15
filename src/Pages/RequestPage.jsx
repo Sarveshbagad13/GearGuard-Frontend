@@ -125,8 +125,8 @@ const RequestsPage = () => {
     const categoryMap = {
       'Repair': 'Corrective',
       'Preventive Maintenance': 'Preventive',
-      'Emergency': 'Emergency',
-      'Inspection': 'Inspection',
+      'Emergency': 'Corrective',
+      'Inspection': 'Preventive',
     };
 
     return categoryMap[category] || 'Corrective';

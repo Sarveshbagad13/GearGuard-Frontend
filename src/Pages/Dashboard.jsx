@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { getStoredUser, normalizeRole, clearAllAuth } from '../utils/auth';
 import { hasPermission } from '../utils/rolePermissions';
-import { equipmentAPI, maintenanceRequestAPI, dashboardAPI } from '../services/api';
+import { maintenanceRequestAPI, dashboardAPI, notificationAPI } from '../services/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -31,6 +31,27 @@ const Dashboard = () => {
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  const getBucketCount = (items, key, value) => {
+    if (!Array.isArray(items)) return 0;
+    const match = items.find((item) => item?.[key] === value);
+    return Number(match?.count || 0);
+  };
+
+  const isSameDay = (dateValue) => {
+    if (!dateValue) return false;
+    const date = new Date(dateValue);
+    const now = new Date();
+    return (
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate()
+    );
+  };
 
   useEffect(() => {
     const storedUser = getStoredUser();
@@ -41,75 +62,189 @@ const Dashboard = () => {
     }
   }, [navigate]);
 
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+
+    const fetchNotifications = async ({ background = false } = {}) => {
+      if (!background && isMounted) {
+        setNotificationsLoading(true);
+      }
+
+      try {
+        const response = await notificationAPI.getMyNotifications({ limit: 8 }).catch(() => null);
+        if (response?.success && isMounted) {
+          setNotifications(Array.isArray(response.data) ? response.data : []);
+          setUnreadCount(response?.meta?.unreadCount ?? 0);
+        }
+      } finally {
+        if (!background && isMounted) {
+          setNotificationsLoading(false);
+        }
+      }
+    };
+
+    fetchNotifications();
+
+    const refreshTimer = setInterval(() => {
+      fetchNotifications({ background: true });
+    }, 20000);
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications({ background: true });
+      }
+    };
+
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(refreshTimer);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
+  }, [user]);
+
   // Fetch live dashboard data — branched by role
   useEffect(() => {
     if (!user) return;
     const role = normalizeRole(user.role);
+    let isMounted = true;
 
-    const fetchDashboardData = async () => {
-      setStatsLoading(true);
+    const fetchDashboardData = async ({ background = false } = {}) => {
+      if (!background && isMounted) {
+        setStatsLoading(true);
+      }
+
       try {
         if (role === 'Admin' || role === 'Manager') {
           // ── Admin / Manager: system-wide overview ─────────────────────────
-          const dashRes = await dashboardAPI.getAdminDashboard().catch(() => null);
-          if (dashRes?.data) {
+          const [dashRes, reqRes] = await Promise.all([
+            dashboardAPI.getAdminDashboard().catch(() => null),
+            maintenanceRequestAPI.getAll().catch(() => ({ data: [] })),
+          ]);
+
+          const requests = Array.isArray(reqRes.data) ? reqRes.data : [];
+
+          if (dashRes?.data && isMounted) {
             const d = dashRes.data;
+            const byStatus = d?.equipment?.byStatus || [];
+            const byStage = d?.requests?.byStage || [];
+            const repairedCount = getBucketCount(byStage, 'stage', 'Repaired');
+            const activeEquipment = getBucketCount(byStatus, 'status', 'Active') || d?.equipment?.total || 0;
+            const openRequests = Math.max((d?.requests?.total || 0) - repairedCount, 0);
+            const completedToday = requests.filter((r) => r?.stage === 'Repaired' && isSameDay(r?.updatedAt)).length;
+
             setStatsData({
-              stat1: d.equipment.active,
-              stat2: d.requests.open,
-              stat3: d.requests.completedToday,
-              stat4: d.avgResponseTimeHours ? `${d.avgResponseTimeHours}h` : 'N/A',
+              stat1: activeEquipment,
+              stat2: openRequests,
+              stat3: completedToday,
+              stat4: d?.overdueRequests ?? 0,
             });
           }
-          // Recent: all requests newest-first
-          const reqRes = await maintenanceRequestAPI.getAll().catch(() => ({ data: [] }));
-          const requests = Array.isArray(reqRes.data) ? reqRes.data : [];
-          setRecentActivity(
-            [...requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5)
-          );
+
+          if (isMounted) {
+            setRecentActivity(
+              [...requests].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5)
+            );
+          }
 
         } else if (role === 'Technician') {
           // ── Technician: personal task queue ────────────────────────────────
           const dashRes = await dashboardAPI.getTechnicianDashboard().catch(() => null);
-          if (dashRes?.data) {
+          if (dashRes?.data && isMounted) {
             const d = dashRes.data;
             setStatsData({
-              stat1: d.inProgress,
-              stat2: d.assigned,
-              stat3: d.completedToday,
-              stat4: d.overdue,
+              stat1: d?.requests?.inProgress ?? 0,
+              stat2: d?.requests?.total ?? 0,
+              stat3: d?.requests?.completed ?? 0,
+              stat4: d?.requests?.pending ?? 0,
             });
-            setRecentActivity(d.recentTasks || []);
+            setRecentActivity(d?.upcomingTasks || []);
           }
 
         } else {
           // ── User / Employee: their own requests only ────────────────────────
           const dashRes = await dashboardAPI.getEmployeeDashboard().catch(() => null);
-          if (dashRes?.data) {
+          if (dashRes?.data && isMounted) {
             const d = dashRes.data;
             setStatsData({
-              stat1: d.total,
-              stat2: d.open,
-              stat3: d.completed,
-              stat4: d.inProgress,
+              stat1: d?.requests?.total ?? 0,
+              stat2: d?.requests?.pending ?? 0,
+              stat3: d?.requests?.completed ?? 0,
+              stat4: d?.requests?.inProgress ?? 0,
             });
-            setRecentActivity(d.myRequests || []);
+            setRecentActivity(d?.recentRequests || []);
           }
         }
       } catch (err) {
         console.error('Dashboard data fetch error:', err);
       } finally {
-        setStatsLoading(false);
+        if (isMounted) {
+          setStatsLoading(false);
+        }
       }
     };
 
     fetchDashboardData();
+
+    const refreshTimer = setInterval(() => {
+      fetchDashboardData({ background: true });
+    }, 15000);
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboardData({ background: true });
+      }
+    };
+
+    window.addEventListener('focus', onVisibilityOrFocus);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(refreshTimer);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+    };
   }, [user]);
 
   const handleLogout = () => {
     // Clear user object, accessToken, and refreshToken from localStorage
     clearAllAuth();
     navigate('/');
+  };
+
+  const refreshNotifications = async () => {
+    const response = await notificationAPI.getMyNotifications({ limit: 8 }).catch(() => null);
+    if (response?.success) {
+      setNotifications(Array.isArray(response.data) ? response.data : []);
+      setUnreadCount(response?.meta?.unreadCount ?? 0);
+    }
+  };
+
+  const handleOpenNotification = async (item) => {
+    if (!item) return;
+
+    if (!item.isRead) {
+      await notificationAPI.markAsRead(item.id).catch(() => null);
+      await refreshNotifications();
+    }
+
+    setNotifOpen(false);
+    if (item.entityType === 'MaintenanceRequest' && item.entityId) {
+      navigate('/requests');
+      return;
+    }
+
+    navigate('/notifications');
+  };
+
+  const handleMarkAllRead = async () => {
+    await notificationAPI.markAllAsRead().catch(() => null);
+    await refreshNotifications();
   };
 
   // Helper: format a createdAt timestamp as a relative time string
@@ -215,14 +350,14 @@ const Dashboard = () => {
           { label: 'Active Equipment',  value: v('stat1'), icon: Wrench,       color: 'text-cyan-400'   },
           { label: 'Open Requests',     value: v('stat2'), icon: AlertCircle,  color: 'text-yellow-400' },
           { label: 'Completed Today',   value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
-          { label: 'Avg Response Time', value: v('stat4'), icon: Clock,        color: 'text-blue-400'   },
+          { label: 'Overdue Requests',  value: v('stat4'), icon: Clock,        color: 'text-blue-400'   },
         ]
       : userRole === 'Technician'
       ? [
           { label: 'In Progress',       value: v('stat1'), icon: Clock,        color: 'text-blue-400'   },
           { label: 'Assigned to Me',    value: v('stat2'), icon: Bell,         color: 'text-yellow-400' },
-          { label: 'Completed Today',   value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
-          { label: 'Overdue Tasks',     value: v('stat4'), icon: AlertCircle,  color: 'text-red-400'    },
+          { label: 'Completed',         value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
+          { label: 'Pending Tasks',     value: v('stat4'), icon: AlertCircle,  color: 'text-red-400'    },
         ]
       : [
           { label: 'My Requests',       value: v('stat1'), icon: FileText,     color: 'text-cyan-400'   },
@@ -270,10 +405,67 @@ const Dashboard = () => {
             </div>
             
             <div className="flex items-center space-x-4">
-              <button className="relative p-2 text-gray-400 hover:text-cyan-400 hover:bg-primary-darkest rounded-lg transition">
-                <Bell className="w-5 h-5" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setNotifOpen((prev) => !prev)}
+                  className="relative p-2 text-gray-400 hover:text-cyan-400 hover:bg-primary-darkest rounded-lg transition"
+                >
+                  <Bell className="w-5 h-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <div className="absolute right-0 mt-2 w-80 bg-primary-darker border border-cyan-500/20 rounded-xl shadow-2xl shadow-cyan-500/10 z-50">
+                    <div className="p-3 border-b border-cyan-500/20 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-100">Notifications</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleMarkAllRead}
+                          className="text-xs text-cyan-400 hover:text-cyan-300"
+                        >
+                          Mark all read
+                        </button>
+                        <button
+                          onClick={() => {
+                            setNotifOpen(false);
+                            navigate('/notifications');
+                          }}
+                          className="text-xs text-cyan-400 hover:text-cyan-300"
+                        >
+                          View all
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-80 overflow-auto">
+                      {notificationsLoading ? (
+                        <p className="p-4 text-sm text-gray-400">Loading notifications...</p>
+                      ) : notifications.length === 0 ? (
+                        <p className="p-4 text-sm text-gray-500">No notifications yet.</p>
+                      ) : (
+                        notifications.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => handleOpenNotification(item)}
+                            className={`w-full text-left p-3 border-b border-cyan-500/10 hover:bg-primary-darkest transition ${item.isRead ? 'opacity-70' : ''}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-sm font-medium text-gray-100 truncate">{item.title}</p>
+                              {!item.isRead && <span className="w-2 h-2 rounded-full bg-cyan-400 mt-1" />}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1 line-clamp-2">{item.message}</p>
+                            <p className="text-[11px] text-gray-500 mt-2">{timeAgo(item.createdAt)}</p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               
               <div className="flex items-center space-x-3 pl-4 border-l border-cyan-500/20">
                 <div className="text-right">
@@ -384,7 +576,7 @@ const Dashboard = () => {
                     key={req.id}
                     className={`flex items-center p-4 bg-primary-darkest border ${meta.border} rounded-lg transition`}
                   >
-                    <Icon className={`w-5 h-5 ${meta.color} mr-3 flex-shrink-0`} />
+                    <Icon className={`w-5 h-5 ${meta.color} mr-3 shrink-0`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-100 truncate">
                         {meta.label} — {requestNum}
@@ -393,7 +585,7 @@ const Dashboard = () => {
                         {equipmentName} · {timeAgo(req.createdAt)}
                       </p>
                     </div>
-                    <span className={`ml-3 flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded ${meta.color} bg-white/5`}>
+                    <span className={`ml-3 shrink-0 text-xs font-semibold px-2 py-0.5 rounded ${meta.color} bg-white/5`}>
                       {req.stage}
                     </span>
                   </div>
