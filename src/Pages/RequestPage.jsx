@@ -23,8 +23,14 @@ const RequestsPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
   const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [verificationSubmitting, setVerificationSubmitting] = useState(false);
   const [selectedTechnicianId, setSelectedTechnicianId] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('pending');
+  const [verificationForm, setVerificationForm] = useState({
+    satisfied: 'yes',
+    rating: '5',
+    feedback: ''
+  });
   const [newRequestForm, setNewRequestForm] = useState({
     title: '',
     equipmentId: '',
@@ -45,13 +51,26 @@ const RequestsPage = () => {
     if (selectedRequest) {
       setSelectedTechnicianId(selectedRequest.rawData?.assignedToId ? String(selectedRequest.rawData.assignedToId) : '');
       setSelectedStatus(selectedRequest.status || 'pending');
+      setVerificationForm({
+        satisfied: 'yes',
+        rating: selectedRequest.rating ? String(selectedRequest.rating) : '5',
+        feedback: selectedRequest.feedback || ''
+      });
     } else {
       setSelectedTechnicianId('');
       setSelectedStatus('pending');
+      setVerificationForm({
+        satisfied: 'yes',
+        rating: '5',
+        feedback: ''
+      });
     }
   }, [selectedRequest]);
 
-  const mapRequestItem = (item) => ({
+  const mapRequestItem = (item) => {
+    const isAwaitingVerification = item.stage === 'Repaired' && (item.rating === null || item.rating === undefined);
+
+    return {
     id: item.requestNumber || `REQ-${String(item.id).padStart(3, '0')}`,
     title: item.subject,
     equipmentId: item.equipmentId ? `EQ-${String(item.equipmentId).padStart(3, '0')}` : 'N/A',
@@ -67,8 +86,12 @@ const RequestsPage = () => {
     dueDate: item.scheduledDate ? new Date(item.scheduledDate).toISOString().split('T')[0] : 'TBD',
     completedDate: item.completedDate ? new Date(item.completedDate).toISOString().split('T')[0] : null,
     estimatedTime: item.duration ? `${item.duration} hours` : 'N/A',
+    rating: item.rating ?? null,
+    feedback: item.feedback || '',
+    isAwaitingVerification,
     rawData: item
-  });
+  };
+  };
 
   const fetchRequests = async () => {
     try {
@@ -267,10 +290,15 @@ const RequestsPage = () => {
 
     try {
       setStatusSubmitting(true);
-      const response = await maintenanceRequestAPI.updateStage(
-        selectedRequest.rawData.id,
-        mapFrontendStatusToBackendStage(nextStatus)
-      );
+      const response =
+        currentRole === 'Technician' && nextStatus === 'completed'
+          ? await maintenanceRequestAPI.complete(selectedRequest.rawData.id, {
+              completionNotes: 'Marked completed from requests board'
+            })
+          : await maintenanceRequestAPI.updateStage(
+              selectedRequest.rawData.id,
+              mapFrontendStatusToBackendStage(nextStatus)
+            );
 
       const updatedRequest = mapRequestItem(response.data);
       setRequestsData((prev) =>
@@ -278,12 +306,56 @@ const RequestsPage = () => {
       );
       setSelectedRequest(updatedRequest);
       setSelectedStatus(updatedRequest.status);
-      alert(`Request status updated to ${getStatusLabel(updatedRequest.status)}.`);
+      alert(`Request status updated to ${getStatusLabel(updatedRequest.status, updatedRequest)}.`);
     } catch (err) {
       console.error('Failed to update request status:', err);
       alert(err.message || 'Failed to update request status');
     } finally {
       setStatusSubmitting(false);
+    }
+  };
+
+  const handleVerifyCompletion = async () => {
+    if (!selectedRequest?.rawData?.id) {
+      return;
+    }
+
+    const satisfied = verificationForm.satisfied === 'yes';
+    const feedback = verificationForm.feedback.trim();
+
+    if (!satisfied && !feedback) {
+      alert('Please describe what is still unresolved before reopening the request.');
+      return;
+    }
+
+    if (satisfied) {
+      const ratingNumber = Number(verificationForm.rating);
+      if (!Number.isInteger(ratingNumber) || ratingNumber < 1 || ratingNumber > 5) {
+        alert('Please select a rating between 1 and 5.');
+        return;
+      }
+    }
+
+    try {
+      setVerificationSubmitting(true);
+      const response = await maintenanceRequestAPI.verify(selectedRequest.rawData.id, {
+        satisfied,
+        rating: satisfied ? Number(verificationForm.rating) : null,
+        feedback
+      });
+
+      const updatedRequest = mapRequestItem(response.data);
+      setRequestsData((prev) =>
+        prev.map((request) => (request.rawData.id === selectedRequest.rawData.id ? updatedRequest : request))
+      );
+      setSelectedRequest(updatedRequest);
+      setSelectedStatus(updatedRequest.status);
+      alert(response.message || 'Request verification submitted successfully.');
+    } catch (err) {
+      console.error('Failed to verify completion:', err);
+      alert(err.message || 'Failed to submit verification');
+    } finally {
+      setVerificationSubmitting(false);
     }
   };
 
@@ -314,7 +386,7 @@ const RequestsPage = () => {
     );
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status, requestItem) => {
     const statusConfig = {
       pending: { color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50', icon: Clock, label: 'Pending' },
       'in-progress': { color: 'bg-blue-500/20 text-blue-400 border-blue-500/50', icon: Wrench, label: 'In Progress' },
@@ -322,7 +394,14 @@ const RequestsPage = () => {
       cancelled: { color: 'bg-gray-500/20 text-gray-400 border-gray-500/50', icon: XCircle, label: 'Cancelled' },
     };
 
-    const config = statusConfig[status];
+    const config = { ...statusConfig[status] };
+
+    if (status === 'completed' && requestItem?.isAwaitingVerification) {
+      config.color = 'bg-orange-500/20 text-orange-400 border-orange-500/50';
+      config.icon = Clock;
+      config.label = 'Awaiting Verification';
+    }
+
     const Icon = config.icon;
 
     return (
@@ -333,13 +412,18 @@ const RequestsPage = () => {
     );
   };
 
-  const getStatusLabel = (status) => {
+  const getStatusLabel = (status, requestItem) => {
     const labels = {
       pending: 'Pending',
       'in-progress': 'In Progress',
       completed: 'Completed',
       cancelled: 'Cancelled',
     };
+
+    if (status === 'completed' && requestItem?.isAwaitingVerification) {
+      return 'Awaiting Verification';
+    }
+
     return labels[status] || 'Pending';
   };
 
@@ -572,7 +656,7 @@ const RequestsPage = () => {
                         {getPriorityBadge(request.priority)}
                       </td>
                       <td className="px-6 py-4">
-                        {getStatusBadge(request.status)}
+                        {getStatusBadge(request.status, request)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-300 flex items-center gap-1">
@@ -662,7 +746,7 @@ const RequestsPage = () => {
               </div>
               <div>
                 <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Status</div>
-                {getStatusBadge(selectedRequest.status)}
+                {getStatusBadge(selectedRequest.status, selectedRequest)}
               </div>
               <div>
                 <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Category</div>
@@ -694,6 +778,94 @@ const RequestsPage = () => {
                 {selectedRequest.description}
               </div>
             </div>
+
+            {currentRole === 'User' &&
+              selectedRequest.rawData?.createdById === currentUser?.id &&
+              selectedRequest.status === 'completed' && (
+                <div className="mb-6 border border-cyan-500/30 rounded p-4 bg-cyan-500/5">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Repair Verification</div>
+
+                  {selectedRequest.isAwaitingVerification ? (
+                    <>
+                      <p className="text-sm text-gray-300 mb-4">
+                        Technician marked this request as repaired. Confirm if the issue is fully resolved.
+                      </p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Satisfied?</label>
+                          <select
+                            value={verificationForm.satisfied}
+                            onChange={(e) =>
+                              setVerificationForm((prev) => ({ ...prev, satisfied: e.target.value }))
+                            }
+                            disabled={verificationSubmitting}
+                            className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                          >
+                            <option value="yes">Yes, close this request</option>
+                            <option value="no">No, reopen for rework</option>
+                          </select>
+                        </div>
+
+                        {verificationForm.satisfied === 'yes' && (
+                          <div>
+                            <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Rating</label>
+                            <select
+                              value={verificationForm.rating}
+                              onChange={(e) =>
+                                setVerificationForm((prev) => ({ ...prev, rating: e.target.value }))
+                              }
+                              disabled={verificationSubmitting}
+                              className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                            >
+                              <option value="5">5 - Excellent</option>
+                              <option value="4">4 - Good</option>
+                              <option value="3">3 - Acceptable</option>
+                              <option value="2">2 - Needs Improvement</option>
+                              <option value="1">1 - Poor</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">
+                          Feedback {verificationForm.satisfied === 'no' ? '(required)' : '(optional)'}
+                        </label>
+                        <textarea
+                          rows="3"
+                          value={verificationForm.feedback}
+                          onChange={(e) =>
+                            setVerificationForm((prev) => ({ ...prev, feedback: e.target.value }))
+                          }
+                          disabled={verificationSubmitting}
+                          className="w-full bg-[#1a1f35] border border-cyan-900/20 rounded px-4 py-2 text-white focus:outline-none focus:border-cyan-500/50"
+                          placeholder={
+                            verificationForm.satisfied === 'no'
+                              ? 'What is still not fixed?'
+                              : 'Share optional comments about the repair quality'
+                          }
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleVerifyCompletion}
+                        disabled={verificationSubmitting}
+                        className="px-4 py-2 bg-cyan-500 text-[#0a0e1a] font-bold uppercase tracking-wider hover:bg-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {verificationSubmitting ? 'Submitting...' : 'Submit Verification'}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="text-sm text-green-300">
+                      Verified and closed by requester.
+                      {selectedRequest.rating ? ` Rating: ${selectedRequest.rating}/5.` : ''}
+                      {selectedRequest.feedback ? ` Feedback: ${selectedRequest.feedback}` : ''}
+                    </div>
+                  )}
+                </div>
+              )}
 
             {canAssignTechnician && (
               <div className="mb-6">

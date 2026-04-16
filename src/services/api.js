@@ -168,6 +168,22 @@ export const maintenanceRequestAPI = {
     });
   },
 
+  // Technician marks work completed (awaiting requester verification)
+  complete: async (id, data = {}) => {
+    return apiRequest(`/maintenance-requests/${id}/complete`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Requester verifies completion and closes/reopens request
+  verify: async (id, data) => {
+    return apiRequest(`/maintenance-requests/${id}/verify`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Delete request
   delete: async (id) => {
     return apiRequest(`/maintenance-requests/${id}`, {
@@ -304,6 +320,50 @@ export const dashboardAPI = {
   // Team performance
   getTeamPerformance: async () => {
     return apiRequest('/dashboard/team-performance');
+  },
+
+  // Role-aware report (personal/team/global)
+  getRoleReport: async () => {
+    return apiRequest('/dashboard/report');
+  },
+
+  // Download role-aware report export (admin/manager)
+  downloadRoleReport: async ({ month, year, format = 'csv' }) => {
+    const token = getAccessToken();
+    const queryParams = new URLSearchParams({
+      month: String(month),
+      year: String(year),
+      format: String(format).toLowerCase(),
+    }).toString();
+
+    const response = await fetch(`${API_BASE_URL}/dashboard/report/export?${queryParams}`, {
+      method: 'GET',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+      try {
+        const errorBody = await response.json();
+        const details = errorBody?.error || errorBody?.message;
+        if (details) {
+          errorMessage = `${errorMessage} - ${details}`;
+        }
+      } catch {
+        // Keep default message when error body is not JSON.
+      }
+      throw new Error(errorMessage);
+    }
+
+    return response.blob();
+  },
+
+  // Equipment repair analysis
+  getEquipmentAnalysis: async ({ equipmentId }) => {
+    const params = new URLSearchParams({ equipmentId: String(equipmentId) }).toString();
+    return apiRequest(`/dashboard/equipment-analysis?${params}`);
   },
 };
 
