@@ -16,3 +16,19 @@ code {
     monospace;
 }
 
+/* Keep native selects in the app's dark theme as much as the browser allows. */
+.gearguard-dark-select {
+  color-scheme: dark;
+}
+
+.gearguard-dark-select option,
+.gearguard-dark-select optgroup {
+  background-color: #070a1a;
+  color: #e5e7eb;
+}
+
+.gearguard-dark-select option:checked {
+  background-color: #0f172a;
+  color: #67e8f9;
+}
+

@@ -7,7 +7,6 @@ import {
   Calendar,
   LayoutGrid,
   LogOut,
-  Settings,
   Bell,
   TrendingUp,
   AlertCircle,
@@ -16,7 +15,7 @@ import {
 } from 'lucide-react';
 import { getStoredUser, normalizeRole, clearAllAuth } from '../utils/auth';
 import { hasPermission } from '../utils/rolePermissions';
-import { maintenanceRequestAPI, dashboardAPI, notificationAPI, equipmentAPI } from '../services/api';
+import { maintenanceRequestAPI, dashboardAPI, notificationAPI } from '../services/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -31,17 +30,6 @@ const Dashboard = () => {
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [reportLoading, setReportLoading] = useState(true);
-  const [reportData, setReportData] = useState(null);
-  const [exportingFormat, setExportingFormat] = useState('');
-  const [reportMonth, setReportMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
-  const [equipmentOptions, setEquipmentOptions] = useState([]);
-  const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
-  const [equipmentAnalysis, setEquipmentAnalysis] = useState(null);
-  const [equipmentAnalysisLoading, setEquipmentAnalysisLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -142,17 +130,15 @@ const Dashboard = () => {
           if (dashRes?.data && isMounted) {
             const d = dashRes.data;
             const byStatus = d?.equipment?.byStatus || [];
-            const byStage = d?.requests?.byStage || [];
-            const repairedCount = getBucketCount(byStage, 'stage', 'Repaired');
-            const activeEquipment = getBucketCount(byStatus, 'status', 'Active') || d?.equipment?.total || 0;
-            const openRequests = Math.max((d?.requests?.total || 0) - repairedCount, 0);
-            const completedToday = requests.filter((r) => r?.stage === 'Repaired' && isSameDay(r?.updatedAt)).length;
+            const activeEquipment = getBucketCount(byStatus, 'status', 'Active') || d?.equipment?.active || d?.equipment?.total || 0;
+            const openRequests = d?.requests?.open ?? Math.max((d?.requests?.total || 0) - (d?.requests?.repaired || 0), 0);
+            const completedToday = d?.requests?.completedToday ?? requests.filter((r) => r?.stage === 'Repaired' && isSameDay(r?.updatedAt)).length;
 
             setStatsData({
               stat1: activeEquipment,
               stat2: openRequests,
               stat3: completedToday,
-              stat4: d?.overdueRequests ?? 0,
+              stat4: d?.requests?.overdue ?? 0,
             });
           }
 
@@ -168,12 +154,12 @@ const Dashboard = () => {
           if (dashRes?.data && isMounted) {
             const d = dashRes.data;
             setStatsData({
-              stat1: d?.requests?.inProgress ?? 0,
-              stat2: d?.requests?.total ?? 0,
-              stat3: d?.requests?.completed ?? 0,
-              stat4: d?.requests?.pending ?? 0,
+              stat1: d?.inProgress ?? 0,
+              stat2: d?.assigned ?? 0,
+              stat3: d?.completedToday ?? 0,
+              stat4: d?.overdue ?? 0,
             });
-            setRecentActivity(d?.upcomingTasks || []);
+            setRecentActivity(Array.isArray(d?.recentTasks) ? d.recentTasks : []);
           }
 
         } else {
@@ -182,12 +168,12 @@ const Dashboard = () => {
           if (dashRes?.data && isMounted) {
             const d = dashRes.data;
             setStatsData({
-              stat1: d?.requests?.total ?? 0,
-              stat2: d?.requests?.pending ?? 0,
-              stat3: d?.requests?.completed ?? 0,
-              stat4: d?.requests?.inProgress ?? 0,
+              stat1: d?.total ?? 0,
+              stat2: d?.open ?? 0,
+              stat3: d?.completed ?? 0,
+              stat4: d?.inProgress ?? 0,
             });
-            setRecentActivity(d?.recentRequests || []);
+            setRecentActivity(Array.isArray(d?.myRequests) ? d.myRequests : []);
           }
         }
       } catch (err) {
@@ -221,86 +207,6 @@ const Dashboard = () => {
       document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     };
   }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    let isMounted = true;
-
-    const fetchEquipmentOptions = async () => {
-      try {
-        const response = await equipmentAPI.getAll().catch(() => null);
-        if (response?.success && isMounted) {
-          const items = Array.isArray(response.data) ? response.data : [];
-          setEquipmentOptions(items);
-          if (!selectedEquipmentId && items.length > 0) {
-            setSelectedEquipmentId(String(items[0].id));
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch equipment options:', error);
-      }
-    };
-
-    const fetchRoleReport = async ({ background = false } = {}) => {
-      if (!background && isMounted) {
-        setReportLoading(true);
-      }
-
-      try {
-        const response = await dashboardAPI.getRoleReport().catch(() => null);
-        if (response?.success && isMounted) {
-          setReportData(response.data || null);
-        }
-      } finally {
-        if (isMounted) {
-          setReportLoading(false);
-        }
-      }
-    };
-
-    fetchRoleReport();
-    fetchEquipmentOptions();
-
-    const refreshTimer = setInterval(() => {
-      fetchRoleReport({ background: true });
-    }, 30000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(refreshTimer);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    if (!selectedEquipmentId) {
-      setEquipmentAnalysis(null);
-      return undefined;
-    }
-
-    let isMounted = true;
-
-    const fetchEquipmentAnalysis = async () => {
-      try {
-        setEquipmentAnalysisLoading(true);
-        const response = await dashboardAPI.getEquipmentAnalysis({ equipmentId: selectedEquipmentId }).catch(() => null);
-        if (response?.success && isMounted) {
-          setEquipmentAnalysis(response.data || null);
-        }
-      } catch (error) {
-        console.error('Failed to fetch equipment analysis:', error);
-      } finally {
-        if (isMounted) {
-          setEquipmentAnalysisLoading(false);
-        }
-      }
-    };
-
-    fetchEquipmentAnalysis();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedEquipmentId]);
 
   const handleLogout = () => {
     // Clear user object, accessToken, and refreshToken from localStorage
@@ -336,44 +242,6 @@ const Dashboard = () => {
   const handleMarkAllRead = async () => {
     await notificationAPI.markAllAsRead().catch(() => null);
     await refreshNotifications();
-  };
-
-  const triggerReportExport = async (format) => {
-    if (!['Admin', 'Manager'].includes(userRole)) {
-      return;
-    }
-
-    const [yearValue, monthValue] = reportMonth.split('-');
-    const month = Number(monthValue);
-    const year = Number(yearValue);
-
-    if (!month || !year) {
-      alert('Please select a valid month for export.');
-      return;
-    }
-
-    try {
-      setExportingFormat(format);
-      const blob = await dashboardAPI.downloadRoleReport({
-        month,
-        year,
-        format,
-      });
-
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `gearguard-report-${year}-${String(month).padStart(2, '0')}.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Report export failed:', error);
-      alert(error.message || 'Failed to export report');
-    } finally {
-      setExportingFormat('');
-    }
   };
 
   // Helper: format a createdAt timestamp as a relative time string
@@ -424,6 +292,24 @@ const Dashboard = () => {
         path: '/requests',
         color: 'from-blue-500 to-blue-600',
         stats: 'Monitor requests',
+        roles: ['Admin', 'Manager', 'Technician', 'User']
+      },
+      {
+        title: 'Report Snapshot',
+        description: 'Role-based maintenance reporting view',
+        icon: TrendingUp,
+        path: '/report-snapshot',
+        color: 'from-emerald-500 to-emerald-600',
+        stats: 'Track performance',
+        roles: ['Admin', 'Manager', 'Technician', 'User']
+      },
+      {
+        title: 'Equipment Analysis',
+        description: 'Analyze repair timing for each asset',
+        icon: Wrench,
+        path: '/equipment-analysis',
+        color: 'from-indigo-500 to-indigo-600',
+        stats: 'Repair insights',
         roles: ['Admin', 'Manager', 'Technician', 'User']
       },
       {
@@ -494,86 +380,6 @@ const Dashboard = () => {
           { label: 'Completed',         value: v('stat3'), icon: CheckCircle2, color: 'text-green-400'  },
           { label: 'In Progress',       value: v('stat4'), icon: Clock,        color: 'text-blue-400'   },
         ];
-
-  const reportCards = (() => {
-    const scope = reportData?.scope;
-    const personal = reportData?.personal;
-    const teamSummary = reportData?.team?.summary;
-    const globalSummary = reportData?.global?.summary;
-
-    if (scope === 'global' && globalSummary) {
-      return [
-        { label: 'Equipments Repaired (All Teams)', value: globalSummary.repairedEquipments ?? 0, color: 'text-cyan-400' },
-        { label: 'Requests Raised (All Users)', value: globalSummary.requestsRaisedByUsers ?? 0, color: 'text-yellow-400' },
-        { label: 'Requests Solved (All Technicians)', value: globalSummary.solvedByTechnicians ?? 0, color: 'text-green-400' },
-      ];
-    }
-
-    if (scope === 'team' && teamSummary) {
-      return [
-        { label: 'Equipments Repaired (My Team)', value: teamSummary.repairedEquipments ?? 0, color: 'text-cyan-400' },
-        { label: 'Requests Raised (My Team Users)', value: teamSummary.requestsRaisedByUsers ?? 0, color: 'text-yellow-400' },
-        { label: 'Requests Solved (My Team Technicians)', value: teamSummary.solvedByTechnicians ?? 0, color: 'text-green-400' },
-      ];
-    }
-
-    if (personal?.type === 'technician') {
-      return [
-        { label: 'Requests Solved (Me)', value: personal.solved ?? 0, color: 'text-green-400' },
-        { label: 'Verified Closed (Me)', value: personal.verifiedClosed ?? 0, color: 'text-cyan-400' },
-        { label: 'My Average Rating', value: personal.avgRating ?? '0.00', color: 'text-yellow-400' },
-      ];
-    }
-
-    return [
-      { label: 'Requests Raised (Me)', value: personal?.raisedTotal ?? 0, color: 'text-yellow-400' },
-      { label: 'Awaiting Verification (Me)', value: personal?.awaitingVerification ?? 0, color: 'text-cyan-400' },
-      { label: 'Verified Closed (Me)', value: personal?.verifiedClosed ?? 0, color: 'text-green-400' },
-    ];
-  })();
-
-  const reportList = (() => {
-    if (reportData?.scope === 'global') {
-      return (reportData?.global?.byTeam || []).slice(0, 5).map((item) => ({
-        key: `team-${item.teamId}`,
-        title: item.teamName,
-        subtitle: `${item.repairedEquipments} equipments repaired`,
-        value: `${item.repairedRequests} requests solved`,
-      }));
-    }
-
-    if (reportData?.scope === 'team') {
-      return (reportData?.team?.byTechnician || []).slice(0, 5).map((item) => ({
-        key: `tech-${item.technicianId}`,
-        title: item.name,
-        subtitle: 'Technician solved requests',
-        value: `${item.solvedCount}`,
-      }));
-    }
-
-    return [];
-  })();
-
-  const formatDuration = (hours) => {
-    if (hours === null || hours === undefined || Number.isNaN(Number(hours))) {
-      return 'N/A';
-    }
-
-    const totalHours = Number(hours);
-    if (totalHours < 24) {
-      return `${totalHours.toFixed(1)} hrs`;
-    }
-
-    return `${(totalHours / 24).toFixed(1)} days`;
-  };
-
-  const formatDays = (days) => {
-    if (days === null || days === undefined || Number.isNaN(Number(days))) {
-      return 'N/A';
-    }
-
-    return `${Number(days).toFixed(1)} days`;
-  };
 
   if (!user) {
     return (
@@ -724,170 +530,6 @@ const Dashboard = () => {
               <p className="text-sm text-gray-400">{stat.label}</p>
             </div>
           ))}
-        </div>
-
-        {/* Role-Based Report Snapshot */}
-        <div className="mb-8 bg-primary-darker rounded-xl border border-cyan-500/20 p-6 shadow-lg shadow-cyan-500/5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-semibold text-gray-100">Report Snapshot</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-xs uppercase tracking-wider text-cyan-400">
-                {reportData?.scope || 'personal'} scope
-              </span>
-              {['Admin', 'Manager'].includes(userRole) && (
-                <>
-                  <input
-                    type="month"
-                    value={reportMonth}
-                    onChange={(e) => setReportMonth(e.target.value)}
-                    className="bg-primary-darkest border border-cyan-500/20 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-cyan-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => triggerReportExport('csv')}
-                    disabled={exportingFormat !== ''}
-                    className="px-3 py-1 text-xs font-semibold border border-cyan-500/40 text-cyan-300 rounded hover:bg-cyan-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {exportingFormat === 'csv' ? 'Exporting...' : 'Export CSV'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => triggerReportExport('pdf')}
-                    disabled={exportingFormat !== ''}
-                    className="px-3 py-1 text-xs font-semibold border border-blue-500/40 text-blue-300 rounded hover:bg-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {exportingFormat === 'pdf' ? 'Exporting...' : 'Export PDF'}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {reportLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                {reportCards.map((card) => (
-                  <div key={card.label} className="bg-primary-darkest border border-cyan-500/10 rounded-lg p-4">
-                    <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">{card.label}</p>
-                    <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {reportData?.scope === 'team' && reportData?.team?.team?.name && (
-                <p className="text-sm text-gray-400 mb-3">
-                  Team: <span className="text-cyan-300 font-medium">{reportData.team.team.name}</span>
-                </p>
-              )}
-
-              {reportList.length > 0 && (
-                <div className="space-y-2">
-                  {reportList.map((item) => (
-                    <div key={item.key} className="flex items-center justify-between bg-primary-darkest border border-cyan-500/10 rounded-lg p-3">
-                      <div>
-                        <p className="text-sm text-gray-100 font-medium">{item.title}</p>
-                        <p className="text-xs text-gray-500">{item.subtitle}</p>
-                      </div>
-                      <p className="text-sm text-cyan-300 font-semibold">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Equipment Analysis */}
-        <div className="mb-8 bg-primary-darker rounded-xl border border-cyan-500/20 p-6 shadow-lg shadow-cyan-500/5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-semibold text-gray-100">Equipment Analysis</h3>
-              <p className="text-sm text-gray-400">Review repair duration and the average time between repairs for a single asset.</p>
-            </div>
-
-            <select
-              value={selectedEquipmentId}
-              onChange={(e) => setSelectedEquipmentId(e.target.value)}
-              className="bg-primary-darkest border border-cyan-500/20 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-cyan-400 min-w-0 md:min-w-72"
-            >
-              <option value="">Select equipment</option>
-              {equipmentOptions.map((equipment) => (
-                <option key={equipment.id} value={equipment.id}>
-                  {equipment.name} ({equipment.serialNumber})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {equipmentAnalysisLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500" />
-            </div>
-          ) : equipmentAnalysis?.equipment ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div className="bg-primary-darkest border border-cyan-500/10 rounded-lg p-4">
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">Repair Count</p>
-                  <p className="text-2xl font-bold text-cyan-400">{equipmentAnalysis.summary.repairCount}</p>
-                </div>
-                <div className="bg-primary-darkest border border-cyan-500/10 rounded-lg p-4">
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">Avg Repair Time</p>
-                  <p className="text-2xl font-bold text-green-400">{formatDuration(equipmentAnalysis.summary.avgRepairDurationHours)}</p>
-                </div>
-                <div className="bg-primary-darkest border border-cyan-500/10 rounded-lg p-4">
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">Avg Time Between Repairs</p>
-                  <p className="text-2xl font-bold text-yellow-400">{formatDays(equipmentAnalysis.summary.avgDaysBetweenRepairs)}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="bg-primary-darkest border border-cyan-500/10 rounded-lg p-4">
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">Equipment Details</p>
-                  <p className="text-gray-100 font-medium">{equipmentAnalysis.equipment.name}</p>
-                  <p className="text-sm text-gray-400">Serial: {equipmentAnalysis.equipment.serialNumber}</p>
-                  <p className="text-sm text-gray-400">Team: {equipmentAnalysis.equipment.maintenanceTeam?.name || 'Unassigned'}</p>
-                  <p className="text-sm text-gray-400">Location: {equipmentAnalysis.equipment.location}</p>
-                </div>
-                <div className="bg-primary-darkest border border-cyan-500/10 rounded-lg p-4">
-                  <p className="text-xs uppercase tracking-wider text-gray-500 mb-2">Repair Timing</p>
-                  <p className="text-sm text-gray-300">Total repair time: <span className="text-cyan-300 font-medium">{formatDuration(equipmentAnalysis.summary.totalRepairDurationHours)}</span></p>
-                  <p className="text-sm text-gray-300">Days since last repair: <span className="text-cyan-300 font-medium">{formatDays(equipmentAnalysis.summary.daysSinceLastRepair)}</span></p>
-                  <p className="text-sm text-gray-300">Last repaired on: <span className="text-cyan-300 font-medium">{equipmentAnalysis.summary.lastCompletedDate ? new Date(equipmentAnalysis.summary.lastCompletedDate).toLocaleDateString() : 'N/A'}</span></p>
-                  <p className="text-sm text-gray-300">First repaired on: <span className="text-cyan-300 font-medium">{equipmentAnalysis.summary.firstCompletedDate ? new Date(equipmentAnalysis.summary.firstCompletedDate).toLocaleDateString() : 'N/A'}</span></p>
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm font-semibold text-gray-100 mb-3">Recent Repair History</p>
-                {equipmentAnalysis.history.length === 0 ? (
-                  <p className="text-sm text-gray-500">No completed repair history found for this equipment.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {equipmentAnalysis.history.slice(-5).reverse().map((item) => (
-                      <div key={item.requestId} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 bg-primary-darkest border border-cyan-500/10 rounded-lg p-3">
-                        <div>
-                          <p className="text-sm text-gray-100 font-medium">{item.requestNumber}</p>
-                          <p className="text-xs text-gray-500">Completed {item.completedDate ? new Date(item.completedDate).toLocaleDateString() : 'N/A'} by {item.technicianName}</p>
-                        </div>
-                        <div className="text-sm text-gray-300">
-                          Repair duration: <span className="text-cyan-300 font-medium">{formatDuration(item.repairDurationHours)}</span>
-                        </div>
-                        <div className="text-sm text-gray-300">
-                          Rating: <span className="text-green-300 font-medium">{item.rating ?? 'N/A'}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-gray-500">Choose equipment to see repair timing analysis.</p>
-          )}
         </div>
 
         {/* Module Cards */}

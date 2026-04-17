@@ -9,6 +9,8 @@ import CalendarPage from './Pages/CalendarPage';
 import TeamPage from './Pages/TeamPage';
 import UserManagementPage from './Pages/UserManagementPage';
 import NotificationsPage from './Pages/NotificationsPage';
+import ReportSnapshotPage from './Pages/ReportSnapshotPage';
+import EquipmentAnalysisPage from './Pages/EquipmentAnalysisPage';
 import { getStoredUser } from './utils/auth';
 import { hasPermission } from './utils/rolePermissions';
 
@@ -20,6 +22,7 @@ import Intelligence from './components/Intelligence';
 import CTA from './components/CTA';
 import Footer from './components/Footer';
 import AnimatedBackground from './components/AnimatedBackground';
+import AlertCardProvider from './components/AlertCardProvider';
 
 // Landing Page Component
 function LandingPage() {
@@ -54,6 +57,7 @@ function ProtectedRoute({ children, permission }) {
 function App() {
   return (
     <BrowserRouter>
+      <AlertCardProvider />
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<LandingPage />} />
@@ -121,6 +125,22 @@ function App() {
           element={
             <ProtectedRoute>
               <NotificationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/report-snapshot"
+          element={
+            <ProtectedRoute>
+              <ReportSnapshotPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/equipment-analysis"
+          element={
+            <ProtectedRoute>
+              <EquipmentAnalysisPage />
             </ProtectedRoute>
           }
         />
