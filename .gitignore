@@ -14,6 +14,10 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+GearGuard-frontend/node_modules
+GearGuard-frontend/dist
+GearGuard-backend/node_modules
+GearGuard-backend/
 
 # Editor directories and files
 .vscode/*

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Search, Filter, Plus, Download, Upload, MoreVertical, AlertTriangle, CheckCircle2, Clock, User, Wrench, XCircle, AlertCircle } from 'lucide-react';
 import { maintenanceRequestAPI, equipmentAPI, userAPI } from '../services/api';
 import { getStoredUser, normalizeRole } from '../utils/auth';
@@ -41,33 +41,22 @@ const RequestsPage = () => {
   });
 
   // Fetch maintenance requests from API
-  useEffect(() => {
-    fetchRequests();
-    fetchEquipmentOptions();
-    fetchTechnicianOptions();
+  const mapBackendPriority = useCallback((priority) => {
+    if (!priority) return 'medium';
+    return priority.toLowerCase();
   }, []);
 
-  useEffect(() => {
-    if (selectedRequest) {
-      setSelectedTechnicianId(selectedRequest.rawData?.assignedToId ? String(selectedRequest.rawData.assignedToId) : '');
-      setSelectedStatus(selectedRequest.status || 'pending');
-      setVerificationForm({
-        satisfied: 'yes',
-        rating: selectedRequest.rating ? String(selectedRequest.rating) : '5',
-        feedback: selectedRequest.feedback || ''
-      });
-    } else {
-      setSelectedTechnicianId('');
-      setSelectedStatus('pending');
-      setVerificationForm({
-        satisfied: 'yes',
-        rating: '5',
-        feedback: ''
-      });
-    }
-  }, [selectedRequest]);
+  const mapBackendStage = useCallback((stage) => {
+    const stageMap = {
+      'New': 'pending',
+      'In Progress': 'in-progress',
+      'Repaired': 'completed',
+      'Scrap': 'cancelled'
+    };
+    return stageMap[stage] || 'pending';
+  }, []);
 
-  const mapRequestItem = (item) => {
+  const mapRequestItem = useCallback((item) => {
     const isAwaitingVerification = item.stage === 'Repaired' && (item.rating === null || item.rating === undefined);
 
     return {
@@ -91,9 +80,9 @@ const RequestsPage = () => {
     isAwaitingVerification,
     rawData: item
   };
-  };
+  }, [mapBackendPriority, mapBackendStage]);
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -114,9 +103,9 @@ const RequestsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentRole, currentUser?.id, mapRequestItem]);
 
-  const fetchEquipmentOptions = async () => {
+  const fetchEquipmentOptions = useCallback(async () => {
     try {
       const response = await equipmentAPI.getAll();
       const options = Array.isArray(response?.data)
@@ -132,9 +121,9 @@ const RequestsPage = () => {
       // Keep form usable with no options instead of breaking the page.
       setEquipmentOptions([]);
     }
-  };
+  }, []);
 
-  const fetchTechnicianOptions = async () => {
+  const fetchTechnicianOptions = useCallback(async () => {
     try {
       const response = await userAPI.getAll({ role: 'Technician' });
       setTechnicianOptions(Array.isArray(response?.data) ? response.data : []);
@@ -142,7 +131,33 @@ const RequestsPage = () => {
       console.error('Failed to fetch technician options:', err);
       setTechnicianOptions([]);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchRequests();
+    fetchEquipmentOptions();
+    fetchTechnicianOptions();
+  }, [fetchEquipmentOptions, fetchRequests, fetchTechnicianOptions]);
+
+  useEffect(() => {
+    if (selectedRequest) {
+      setSelectedTechnicianId(selectedRequest.rawData?.assignedToId ? String(selectedRequest.rawData.assignedToId) : '');
+      setSelectedStatus(selectedRequest.status || 'pending');
+      setVerificationForm({
+        satisfied: 'yes',
+        rating: selectedRequest.rating ? String(selectedRequest.rating) : '5',
+        feedback: selectedRequest.feedback || ''
+      });
+    } else {
+      setSelectedTechnicianId('');
+      setSelectedStatus('pending');
+      setVerificationForm({
+        satisfied: 'yes',
+        rating: '5',
+        feedback: ''
+      });
+    }
+  }, [selectedRequest]);
 
   const mapCategoryToRequestType = (category) => {
     const categoryMap = {
@@ -251,23 +266,6 @@ const RequestsPage = () => {
     } finally {
       setAssignmentSubmitting(false);
     }
-  };
-
-  // Helper function to map backend priority to frontend
-  const mapBackendPriority = (priority) => {
-    if (!priority) return 'medium';
-    return priority.toLowerCase();
-  };
-
-  // Helper function to map backend stage to frontend status
-  const mapBackendStage = (stage) => {
-    const stageMap = {
-      'New': 'pending',
-      'In Progress': 'in-progress',
-      'Repaired': 'completed',
-      'Scrap': 'cancelled'
-    };
-    return stageMap[stage] || 'pending';
   };
 
   const mapFrontendStatusToBackendStage = (status) => {

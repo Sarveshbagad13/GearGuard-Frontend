@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CalendarDays,
@@ -159,7 +159,7 @@ function CalendarPage() {
     };
   };
 
-  const fetchEvents = async ({ background = false } = {}) => {
+  const fetchEvents = useCallback(async ({ background = false } = {}) => {
     try {
       if (!background) {
         setLoading(true);
@@ -186,9 +186,9 @@ function CalendarPage() {
         setLoading(false);
       }
     }
-  };
+  }, [month, year]);
 
-  const fetchOptions = async () => {
+  const fetchOptions = useCallback(async () => {
     try {
       setLoadingOptions(true);
       const [equipmentResponse, technicianResponse] = await Promise.all([
@@ -200,10 +200,10 @@ function CalendarPage() {
     } finally {
       setLoadingOptions(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchOptions(); }, []);
-  useEffect(() => { fetchEvents(); }, [year, month]);
+  useEffect(() => { fetchOptions(); }, [fetchOptions]);
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   useEffect(() => {
     const refreshTimer = setInterval(() => {
@@ -230,7 +230,7 @@ function CalendarPage() {
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnFocus);
     };
-  }, [year, month]);
+  }, [fetchEvents]);
 
   const isEventOverdue = (event) => {
     if (!event) return false;

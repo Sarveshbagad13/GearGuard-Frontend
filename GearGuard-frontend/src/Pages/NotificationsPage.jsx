@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, CheckCircle2, Filter, RefreshCw, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationAPI } from '../services/api';
@@ -49,7 +49,7 @@ const NotificationsPage = () => {
     return option?.label || 'All types';
   }, [selectedType]);
 
-  const fetchNotifications = async ({ silent = false } = {}) => {
+  const fetchNotifications = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
       setLoading(true);
     }
@@ -85,11 +85,11 @@ const NotificationsPage = () => {
         setLoading(false);
       }
     }
-  };
+  }, [page, selectedType, unreadOnly]);
 
   useEffect(() => {
     fetchNotifications();
-  }, [page, selectedType, unreadOnly]);
+  }, [fetchNotifications]);
 
   const goToRequestFromNotification = (notification) => {
     if (notification?.entityType === 'MaintenanceRequest' && notification?.entityId) {

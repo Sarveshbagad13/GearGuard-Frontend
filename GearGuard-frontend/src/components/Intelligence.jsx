@@ -15,6 +15,11 @@ const Intelligence = () => {
     'Automated work order prioritization based on criticality',
     'Maintenance cost tracking and budget optimization',
   ];
+  const chartHeights = [
+    28, 35, 42, 38, 44, 51, 48, 55, 61, 57,
+    63, 70, 66, 74, 79, 72, 68, 76, 83, 88,
+    81, 77, 84, 90, 86, 78, 73, 80, 87, 92,
+  ];
 
   return (
     <section className="relative pt-32 pb-16 px-6">
@@ -37,12 +42,12 @@ const Intelligence = () => {
             
             {/* Bar chart */}
             <div className="mb-6 h-48 flex items-end gap-1">
-              {Array.from({ length: 30 }).map((_, idx) => (
+              {chartHeights.map((height, idx) => (
                 <div 
                   key={idx}
                   className="flex-1 bg-gradient-to-t from-cyan-500 to-blue-500 opacity-70 hover:opacity-100 transition-opacity"
                   style={{ 
-                    height: `${Math.random() * 100}%`,
+                    height: `${height}%`,
                     animationDelay: `${idx * 20}ms`
                   }}
                 />

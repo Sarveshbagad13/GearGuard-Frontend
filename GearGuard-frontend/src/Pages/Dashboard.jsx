@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { 
-  Wrench, 
+import {
+  Wrench,
   FileText, 
   Users, 
   Calendar,
@@ -14,7 +14,6 @@ import {
   Clock
 } from 'lucide-react';
 import { getStoredUser, normalizeRole, clearAllAuth } from '../utils/auth';
-import { hasPermission } from '../utils/rolePermissions';
 import { maintenanceRequestAPI, dashboardAPI, notificationAPI } from '../services/api';
 
 const Dashboard = () => {
@@ -274,7 +273,6 @@ const Dashboard = () => {
   // Role-based module access
   const getModulesForRole = (userRole) => {
     const normalizedRole = normalizeRole(userRole);
-    const canManageUsers = hasPermission(normalizedRole, 'MANAGE_USERS');
     const allModules = [
       {
         title: 'Equipment',

@@ -128,7 +128,7 @@ export const exportEquipment = async () => {
     link.remove();
     
     return true;
-  } catch (error) {
+  } catch {
     // If backend doesn't have export endpoint, create CSV from frontend
     console.warn('Backend export not available, creating CSV from frontend');
     
